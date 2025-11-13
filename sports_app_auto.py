@@ -30,6 +30,7 @@ LEAGUES_DICT = {
     "Bundesliga": "BL1",
     "Ligue 1": "FL1",
     "Brasileirão Série A": "BSA"
+}
 
 # -------------------------
 # FUNÇÕES AUXILIARES
