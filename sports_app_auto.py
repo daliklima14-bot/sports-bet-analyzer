@@ -131,6 +131,7 @@ st.dataframe(
     }),
     use_container_width=True
 )
+
 # ==========================================================
 # 🔍 Exibir últimos jogos (forma) e confrontos diretos (H2H)
 # ==========================================================
