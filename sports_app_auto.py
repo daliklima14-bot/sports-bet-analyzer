@@ -72,27 +72,19 @@ if uploaded_file:
 
 else:
     st.info("📁 Faça upload do seu arquivo Excel para começar a análise.")
-# ============================================
-# BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API)
-# ============================================
-
+    
 # ==============================
-# BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API)
+# BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API + ANÁLISE)
 # ==============================
 import requests
 from datetime import datetime, date
 import streamlit as st
 
-st.header("📅 Partidas do Dia (Busca Automática)")
+st.header("📅 Partidas do Dia (Busca Automática e Análise de Probabilidades)")
 
-# Chave da API (configurada no Secrets)
+# === Configuração inicial ===
 API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", "COLOQUE_SUA_API_AQUI")
 
-# Selecionar data (por padrão: hoje)
-data_escolhida = st.date_input("Escolha uma data:", date.today())
-data_formatada = data_escolhida.strftime("%Y-%m-%d")
-
-# Ligas disponíveis
 ligas_dict = {
     "Premier League": "PL",
     "La Liga": "PD",
@@ -101,6 +93,10 @@ ligas_dict = {
     "Ligue 1": "FL1",
     "Brasileirão Série A": "BSA",
 }
+
+# Selecionar data e ligas
+data_escolhida = st.date_input("Escolha uma data:", date.today())
+data_formatada = data_escolhida.strftime("%Y-%m-%d")
 
 ligas_escolhidas = st.multiselect(
     "Selecione as ligas:",
@@ -114,7 +110,7 @@ else:
     try:
         headers = {"X-Auth-Token": API_KEY}
         st.info(f"🔄 Buscando partidas de {data_formatada}...")
-        jogos_encontrados = []
+        jogos_analise = []
 
         for nome_liga in ligas_escolhidas:
             liga_id = ligas_dict[nome_liga]
@@ -132,9 +128,10 @@ else:
                         hora = p["utcDate"][11:16]
                         status = p["status"]
 
-                        # Busca odds médias
+                        # === Buscar odds ===
                         odds_url = f"https://api.football-data.org/v4/matches/{p['id']}/odds"
                         odds_resp = requests.get(odds_url, headers=headers)
+
                         if odds_resp.status_code == 200:
                             odds_data = odds_resp.json()
                             mercados = odds_data.get("bookmakers", [])
@@ -144,17 +141,45 @@ else:
                                     odd_casa = float(mercado_principal[0]["odd"])
                                     odd_empate = float(mercado_principal[1]["odd"])
                                     odd_fora = float(mercado_principal[2]["odd"])
+
+                                    # === Calcular probabilidades implícitas ===
                                     total = (1/odd_casa + 1/odd_empate + 1/odd_fora)
                                     prob_casa = (1/odd_casa)/total*100
                                     prob_empate = (1/odd_empate)/total*100
                                     prob_fora = (1/odd_fora)/total*100
 
+                                    # === Análise simples de valor esperado ===
+                                    maior_prob = max(prob_casa, prob_empate, prob_fora)
+                                    if maior_prob == prob_casa:
+                                        sugestao = f"🏠 Vitória do {casa}"
+                                    elif maior_prob == prob_empate:
+                                        sugestao = "🤝 Empate"
+                                    else:
+                                        sugestao = f"🛫 Vitória do {fora}"
+
+                                    # Valor esperado aproximado (EV = probabilidade * odd - 1)
+                                    EV_casa = (prob_casa/100)*odd_casa - 1
+                                    EV_empate = (prob_empate/100)*odd_empate - 1
+                                    EV_fora = (prob_fora/100)*odd_fora - 1
+
+                                    melhor_EV = max(EV_casa, EV_empate, EV_fora)
+                                    if melhor_EV > 0:
+                                        valor = "💰 **Aposta de Valor Encontrada!**"
+                                    else:
+                                        valor = "⚖️ Aposta equilibrada (sem valor claro)"
+
+                                    st.markdown(f"### 🕒 {hora} — {casa} 🆚 {fora}")
+                                    st.write(f"Status: `{status}`")
                                     st.write(
-                                        f"**{hora} — {casa} 🆚 {fora}**  _(Status: {status})_"
+                                        f"**Odds:** 🏠 {odd_casa} | 🤝 {odd_empate} | 🛫 {odd_fora}"
                                     )
                                     st.write(
-                                        f"➡️ **Probabilidades:** 🏠 {prob_casa:.1f}% | 🤝 {prob_empate:.1f}% | 🛫 {prob_fora:.1f}%"
+                                        f"**Probabilidades:** 🏠 {prob_casa:.1f}% | 🤝 {prob_empate:.1f}% | 🛫 {prob_fora:.1f}%"
                                     )
+                                    st.info(f"🔍 Sugestão: {sugestao}")
+                                    st.success(valor)
+                                    st.divider()
+
                                 except Exception:
                                     st.write(f"**{hora} — {casa} 🆚 {fora}** _(odds não disponíveis)_")
                         else:
