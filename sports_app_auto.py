@@ -41,15 +41,94 @@ if uploaded_file:
 
         st.json(stats)
 
-        # ==============================
-        # FILTROS DE ANÁLISE
-        # ==============================
-        st.subheader("🎯 Filtros de Probabilidade")
-        min_prob = st.slider("Probabilidade mínima para mostrar (Casa)", 0.0, 1.0, 0.5)
-        df_filtrado = df[df['prob_casa'] >= min_prob] if 'prob_casa' in df else df
+        # ============================================
+# 📊 ANÁLISE ESTATÍSTICA E DE ODDS
+# ============================================
+st.subheader("📊 Análise Estatística e de Odds (Probabilidades e Value Bets)")
 
-        st.write("Resultados filtrados:")
-        st.dataframe(df_filtrado)
+if 'df' in locals() or 'df' in globals():
+    try:
+        # Verifica se o arquivo tem as colunas necessárias
+        colunas_necessarias = ['HomeTeam', 'AwayTeam', 'Pred_H', 'Pred_D', 'Pred_A']
+        if all(col in df.columns for col in colunas_necessarias):
+
+            # Mostra tabela básica de probabilidades
+            st.markdown("### ⚽ Probabilidades Previstas")
+            st.dataframe(
+                df[['HomeTeam', 'AwayTeam', 'Pred_H', 'Pred_D', 'Pred_A']].rename(
+                    columns={
+                        'HomeTeam': 'Mandante',
+                        'AwayTeam': 'Visitante',
+                        'Pred_H': 'Vitória Casa (%)',
+                        'Pred_D': 'Empate (%)',
+                        'Pred_A': 'Vitória Fora (%)'
+                    }
+                )
+            )
+
+            # Se houver odds, faz análise de valor esperado
+            if all(col in df.columns for col in ['Home_Odd', 'Draw_Odd', 'Away_Odd']):
+                st.markdown("### 💰 Análise de Odds e Valor Esperado")
+
+                # Calcula odds justas
+                df['Fair_H'] = 1 / df['Pred_H']
+                df['Fair_D'] = 1 / df['Pred_D']
+                df['Fair_A'] = 1 / df['Pred_A']
+
+                # Calcula valor esperado
+                df['Value_H'] = (df['Home_Odd'] * df['Pred_H']) - 1
+                df['Value_D'] = (df['Draw_Odd'] * df['Pred_D']) - 1
+                df['Value_A'] = (df['Away_Odd'] * df['Pred_A']) - 1
+
+                # Monta tabela final
+                tabela_odds = df[[
+                    'HomeTeam', 'AwayTeam',
+                    'Home_Odd', 'Draw_Odd', 'Away_Odd',
+                    'Fair_H', 'Fair_D', 'Fair_A',
+                    'Value_H', 'Value_D', 'Value_A'
+                ]]
+
+                st.dataframe(tabela_odds.rename(columns={
+                    'HomeTeam': 'Mandante',
+                    'AwayTeam': 'Visitante',
+                    'Home_Odd': 'Odd Casa',
+                    'Draw_Odd': 'Odd Empate',
+                    'Away_Odd': 'Odd Fora',
+                    'Fair_H': 'Odd Justa Casa',
+                    'Fair_D': 'Odd Justa Empate',
+                    'Fair_A': 'Odd Justa Fora',
+                    'Value_H': 'Value Casa',
+                    'Value_D': 'Value Empate',
+                    'Value_A': 'Value Fora'
+                }))
+
+                # Destaque apostas de valor
+                melhores_apostas = df[
+                    (df['Value_H'] > 0) | (df['Value_D'] > 0) | (df['Value_A'] > 0)
+                ]
+                if not melhores_apostas.empty:
+                    st.success("🎯 Apostas de Valor Encontradas:")
+                    for _, row in melhores_apostas.iterrows():
+                        if row['Value_H'] > 0:
+                            st.write(f"🏠 {row['HomeTeam']} — Value: **{row['Value_H']:.2f}**")
+                        if row['Value_D'] > 0:
+                            st.write(f"🤝 Empate — Value: **{row['Value_D']:.2f}**")
+                        if row['Value_A'] > 0:
+                            st.write(f"🚀 {row['AwayTeam']} — Value: **{row['Value_A']:.2f}**")
+                else:
+                    st.warning("⚠️ Nenhuma aposta de valor encontrada com as probabilidades atuais.")
+
+            else:
+                st.info("Adicione colunas de odds (Home_Odd, Draw_Odd, Away_Odd) no seu Excel para ver análise de valor esperado.")
+
+        else:
+            st.error("O arquivo Excel precisa conter as colunas: HomeTeam, AwayTeam, Pred_H, Pred_D, Pred_A.")
+
+    except Exception as e:
+        st.error(f"Erro ao processar análises: {e}")
+
+else:
+    st.info("Envie o arquivo Excel para começar a análise.")
 
         # ==============================
         # SIMULAÇÃO DE APOSTA
