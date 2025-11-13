@@ -29,7 +29,43 @@ LEAGUES_DICT = {
     "Serie A (Itália)": "SA",
     "Bundesliga": "BL1",
     "Ligue 1": "FL1",
+    
     "Brasileirão Série A": "BSA"
+    def buscar_h2h(match_id):
+    """Busca histórico de confrontos diretos"""
+    url = f"https://api.b365api.com/v3/events/h2h?token=5ea0b77896d871932e2847dd2a4bd4b0&event_id={match_id}"
+    r = requests.get(url).json()
+    if "results" in r:
+        return r["results"]
+    return []
+
+def buscar_ultimos_jogos(team_name, last_n=5):
+    """Busca últimos N jogos do time e calcula médias"""
+    url = f"https://api.b365api.com/v3/events/team?token=5ea0b77896d871932e2847dd2a4bd4b0&team={team_name}&page=1"
+    r = requests.get(url).json()
+    if "results" not in r:
+        return {"pontos_medios": 0, "gols_marcados": 0}
+
+    jogos = r["results"][:last_n]
+    pontos, gols = 0, 0
+    for j in jogos:
+        home = j["home"]["name"]
+        away = j["away"]["name"]
+        if j["scores"]["ft"]:
+            gols_home = int(j["scores"]["ft"]["home"])
+            gols_away = int(j["scores"]["ft"]["away"])
+            if team_name == home:
+                gols += gols_home
+                if gols_home > gols_away: pontos += 3
+                elif gols_home == gols_away: pontos += 1
+            elif team_name == away:
+                gols += gols_away
+                if gols_away > gols_home: pontos += 3
+                elif gols_away == gols_home: pontos += 1
+    return {
+        "pontos_medios": pontos / last_n,
+        "gols_marcados": gols / last_n
+    }
 }
 
 # -------------------------
@@ -85,8 +121,28 @@ def buscar_partidas(data_jogos: date, ligas_selecionadas: list):
 
     df = pd.DataFrame(resultados)
     return df
-
+st.dataframe(
+    df.rename(columns={
+        "Competition": "Comp", "Date": "Data", "Hour": "Hora",
+        "HomeTeam": "Mandante", "AwayTeam": "Visitante",
+        "Prob_H": "Prob_Mandante", "Prob_D": "Prob_Empate", "Prob_A": "Prob_Visitante",
+        "Home_FormPts": "Forma Mandante", "Away_FormPts": "Forma Visitante",
+        "Home_GPM": "GPM Mandante", "Away_GPM": "GPM Visitante"
+    }),
+    use_container_width=True
+)
 def buscar_odds_para_match(match_id: str):
+    
+    # Buscar histórico H2H e últimos jogos por time
+h2h_data = buscar_h2h(match_id)
+home_form = buscar_ultimos_jogos(row["HomeTeam"], last_n=5)
+away_form = buscar_ultimos_jogos(row["AwayTeam"], last_n=5)
+
+# Adicionar média de pontos e gols
+df.at[row.name, "Home_FormPts"] = home_form["pontos_medios"]
+df.at[row.name, "Away_FormPts"] = away_form["pontos_medios"]
+df.at[row.name, "Home_GPM"] = home_form["gols_marcados"]
+df.at[row.name, "Away_GPM"] = away_form["gols_marcados"]
     """
     Tentativa de buscar odds. football-data.org geralmente não fornece odds; este é um fallback
     que tenta /matches/{id}/odds se disponível. Caso contrário retorna None.
