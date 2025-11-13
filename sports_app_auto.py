@@ -206,27 +206,27 @@ if not df_matches.empty:
                 st.error(f"Erro ao carregar H2H: {e}")
     def buscar_odds_para_match(match_id: str):
         def buscar_h2h(home_id, away_id):
-        if not API_KEY:
-            st.warning("⚠️ Sem API key configurada.")
-            return []
+            if not API_KEY:
+                st.warning("⚠️ Sem API key configurada.")
+                return []
 
-        url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures/headtohead?h2h={home_id}-{away_id}&last=5"
-        headers = {
-            "x-rapidapi-key": API_KEY,
-            "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
+            url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures/headtohead?h2h={home_id}-{away_id}&last=5"
+            headers = {
+                "x-rapidapi-key": API_KEY,
+                "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
     }
 
-        try:
-            resp = requests.get(url, headers=headers, timeout=12)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("response", [])
-            else:
-                st.warning(f"Erro ao buscar H2H: {resp.status_code}")
+            try:
+                resp = requests.get(url, headers=headers, timeout=12)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("response", [])
+                else:
+                    st.warning(f"Erro ao buscar H2H: {resp.status_code}")
+                    return []
+            except Exception as e:
+                st.error(f"Erro ao acessar API H2H: {e}")
                 return []
-        except Exception as e:
-            st.error(f"Erro ao acessar API H2H: {e}")
-            return []
     # Buscar histórico H2H e últimos jogos por time
 h2h_data = buscar_h2h(match_id)
 home_form = buscar_ultimos_jogos(row["HomeTeam"], last_n=5)
