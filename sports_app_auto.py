@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 
 # ==============================
 # CONFIGURAÇÕES DO APP
@@ -78,12 +79,11 @@ else:
 # ==============================
 import requests
 from datetime import datetime, date
-import streamlit as st
 
 st.header("📅 Partidas do Dia (Busca Automática e Análise de Probabilidades)")
 
 # === Configuração inicial ===
-API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", "COLOQUE_SUA_API_AQUI")
+API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY") or os.getenv("FOOTBALL_DATA_API_KEY")
 
 ligas_dict = {
     "Premier League": "PL",
@@ -94,9 +94,9 @@ ligas_dict = {
     "Brasileirão Série A": "BSA",
 }
 
-# Selecionar data e ligas
-data_escolhida = st.date_input("Selecione a data para buscar jogos:", date.today(), key="data_busca")
-data_formatada = data_escolhida.strftime("%Y-%m-%d")
+# Selecionar data e ligas (data usada pela primeira busca/API)
+data_escolhida_api = st.date_input("Selecione a data para buscar jogos:", date.today(), key="data_busca")
+data_formatada = data_escolhida_api.strftime("%Y-%m-%d")
 
 ligas_escolhidas = st.multiselect(
     "Selecione as ligas:",
@@ -104,7 +104,7 @@ ligas_escolhidas = st.multiselect(
     default=["Brasileirão Série A"]
 )
 
-if not API_KEY or API_KEY.startswith("COLOQUE"):
+if not API_KEY or (isinstance(API_KEY, str) and API_KEY.startswith("COLOQUE")):
     st.warning("⚠️ Configure sua chave API no .streamlit/secrets.toml")
 else:
     try:
@@ -199,7 +199,7 @@ st.subheader("📅 Partidas do Dia (Busca Automática)")
 
 # Seleção de data e ligas
 col1, col2 = st.columns(2)
-data_escolhida = col1.date_input("Escolha uma data:", date.today())
+data_escolhida_partidas = col1.date_input("Escolha uma data:", date.today())
 
 ligas_disponiveis = {
     "Premier League": "PL",
@@ -213,15 +213,11 @@ ligas_disponiveis = {
 
 ligas_escolhidas = col2.multiselect("Selecione as ligas:", list(ligas_disponiveis.keys()), default=["Premier League"])
 
-# Chave da API
-import os
-api_key = os.getenv("FOOTBALL_DATA_API_KEY")
-
-if not api_key:
-    st.warning("⚠️ Adicione sua API Key em .streamlit/secrets.toml para ativar a busca automática.")
+if not API_KEY:
+    st.warning("⚠️ Adicione sua API Key em .streamlit/secrets.toml ou na variável de ambiente FOOTBALL_DATA_API_KEY para ativar a busca automática.")
 else:
     url_base = "https://api.football-data.org/v4/competitions/{liga}/matches"
-    headers = {"X-Auth-Token": api_key}
+    headers = {"X-Auth-Token": API_KEY}
 
     partidas_encontradas = False
 
@@ -230,7 +226,7 @@ else:
             continue
 
         url = url_base.format(liga=codigo_liga)
-        params = {"dateFrom": data_escolhida.isoformat(), "dateTo": data_escolhida.isoformat()}
+        params = {"dateFrom": data_escolhida_partidas.isoformat(), "dateTo": data_escolhida_partidas.isoformat()}
         resp = requests.get(url, headers=headers, params=params)
 
         if resp.status_code == 200:
