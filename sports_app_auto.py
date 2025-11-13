@@ -121,7 +121,7 @@ def buscar_partidas(data_jogos: date, ligas_selecionadas: list):
 
     df = pd.DataFrame(resultados)
     return df
-st.dataframe(df_matches,
+st.dataframe(
     df.rename(columns={
         "Competition": "Comp", "Date": "Data", "Hour": "Hora",
         "HomeTeam": "Mandante", "AwayTeam": "Visitante",
