@@ -4,23 +4,28 @@ import pandas as pd
 from datetime import date
 import time
 
-# -------------------------------
-# ⚽ CONFIGURAÇÕES INICIAIS
-# -------------------------------
+# -----------------------------------
+# ⚙️ CONFIGURAÇÕES INICIAIS
+# -----------------------------------
+
 st.set_page_config(page_title="Analisador de Apostas", page_icon="⚽", layout="centered")
 
 st.title("⚽ Analisador e Simulador de Apostas Esportivas")
 st.write("App automatizado para buscar estatísticas e calcular probabilidades das partidas do dia.")
 
-# --- Sua API Key (substitua pela sua chave real do football-data.org) ---
-API_KEY = "SUA_CHAVE_AQUI"
+# 🔑 Pega a API Key direto do secret configurado no Streamlit
+API_KEY = st.secrets["FOOTBALL_DATA_API_KEY"]
+
+# 🌍 URL base da API
 API_URL = "https://api.football-data.org/v4/matches"
 
+# 🧾 Cabeçalho da requisição
 headers = {"X-Auth-Token": API_KEY}
 
-# -------------------------------
-# 🧠 Funções auxiliares
-# -------------------------------
+
+# -----------------------------------
+# 🔍 FUNÇÃO PARA BUSCAR PARTIDAS
+# -----------------------------------
 def buscar_partidas(data_jogos, ligas):
     """Busca partidas das ligas selecionadas para uma data específica."""
     resultados = []
@@ -37,12 +42,12 @@ def buscar_partidas(data_jogos, ligas):
                         "Hora": match["utcDate"][11:16],
                         "Mandante": match["homeTeam"]["name"],
                         "Visitante": match["awayTeam"]["name"],
-                        "Status": match["status"],
+                        "Status": match["status"]
                     })
             else:
-                st.warning(f"Erro ao buscar {liga}: {resp.status_code}")
+                st.warning(f"⚠️ Erro ao buscar {liga}: código {resp.status_code}")
         except Exception as e:
-            st.error(f"Erro: {e}")
+            st.error(f"❌ Erro: {e}")
     return pd.DataFrame(resultados)
 
 
