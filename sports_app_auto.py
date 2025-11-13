@@ -29,8 +29,8 @@ LEAGUES_DICT = {
     "Serie A (Itália)": "SA",
     "Bundesliga": "BL1",
     "Ligue 1": "FL1",
-    
     "Brasileirão Série A": "BSA"
+    
     def buscar_h2h(match_id):
     """Busca histórico de confrontos diretos"""
     url = f"https://api.b365api.com/v3/events/h2h?token=5ea0b77896d871932e2847dd2a4bd4b0&event_id={match_id}"
