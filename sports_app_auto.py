@@ -205,7 +205,7 @@ if not df_matches.empty:
             except Exception as e:
                 st.error(f"Erro ao carregar H2H: {e}")
     def buscar_odds_para_match(match_id: str):
-    def buscar_h2h(home_id, away_id):
+        def buscar_h2h(home_id, away_id):
         if not API_KEY:
             st.warning("⚠️ Sem API key configurada.")
             return []
