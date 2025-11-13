@@ -30,43 +30,6 @@ LEAGUES_DICT = {
     "Bundesliga": "BL1",
     "Ligue 1": "FL1",
     "Brasileirão Série A": "BSA"
-    
-    def buscar_h2h(match_id):
-    """Busca histórico de confrontos diretos"""
-    url = f"https://api.b365api.com/v3/events/h2h?token=5ea0b77896d871932e2847dd2a4bd4b0&event_id={match_id}"
-    r = requests.get(url).json()
-    if "results" in r:
-        return r["results"]
-    return []
-
-def buscar_ultimos_jogos(team_name, last_n=5):
-    """Busca últimos N jogos do time e calcula médias"""
-    url = f"https://api.b365api.com/v3/events/team?token=5ea0b77896d871932e2847dd2a4bd4b0&team={team_name}&page=1"
-    r = requests.get(url).json()
-    if "results" not in r:
-        return {"pontos_medios": 0, "gols_marcados": 0}
-
-    jogos = r["results"][:last_n]
-    pontos, gols = 0, 0
-    for j in jogos:
-        home = j["home"]["name"]
-        away = j["away"]["name"]
-        if j["scores"]["ft"]:
-            gols_home = int(j["scores"]["ft"]["home"])
-            gols_away = int(j["scores"]["ft"]["away"])
-            if team_name == home:
-                gols += gols_home
-                if gols_home > gols_away: pontos += 3
-                elif gols_home == gols_away: pontos += 1
-            elif team_name == away:
-                gols += gols_away
-                if gols_away > gols_home: pontos += 3
-                elif gols_away == gols_home: pontos += 1
-    return {
-        "pontos_medios": pontos / last_n,
-        "gols_marcados": gols / last_n
-    }
-}
 
 # -------------------------
 # FUNÇÕES AUXILIARES
