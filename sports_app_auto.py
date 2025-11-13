@@ -1,154 +1,189 @@
+# sports_app_auto.py
 import streamlit as st
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import date
+import math
 
-# ==============================
-# CONFIGURAÇÕES BÁSICAS DO APP
-# ==============================
-st.set_page_config(page_title="Analisador de Partidas", layout="wide")
-st.title("⚽ Analisador de Partidas - Futebol Inteligente")
-st.write("Este app analisa automaticamente partidas e estatísticas reais das principais ligas.")
+# ============================
+# CONFIGURAÇÃO DA PÁGINA
+# ============================
+st.set_page_config(page_title="Analisador de Apostas", page_icon="⚽", layout="centered")
+st.title("⚽ Analisador e Simulador de Apostas Esportivas")
+st.write("App automatizado para buscar estatísticas, histórico e calcular probabilidades reais das partidas do dia.")
 
-# ==============================
-# CONFIGURAÇÕES DA API
-# ==============================
-API_KEY = "5ea0b77896d871932e2847dd2a4bd4b0"
-API_URL = "https://v3.football.api-sports.io"
-headers = {"x-apisports-key": API_KEY}
+# ============================
+# API KEY
+# ============================
+API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", None)
+API_BASE = "https://api.football-data.org/v4"
+HEADERS = {"X-Auth-Token": API_KEY}
 
-# ==============================
-# LIGAS SUPORTADAS
-# ==============================
-LIGAS_DISPONIVEIS = {
-    "Brasileirão Série A": 71,
-    "Premier League": 39,
-    "La Liga": 140,
-    "Serie A (Itália)": 135,
-    "Bundesliga": 78,
-    "Ligue 1": 61
+if not API_KEY:
+    st.error("⚠️ Adicione sua FOOTBALL_DATA_API_KEY nos Secrets do Streamlit antes de usar.")
+    st.stop()
+
+# ============================
+# FUNÇÕES DE APOIO
+# ============================
+
+def buscar_partidas(data_str, leagues):
+    resultados = []
+    for liga in leagues:
+        url = f"{API_BASE}/competitions/{liga}/matches"
+        params = {"dateFrom": data_str, "dateTo": data_str}
+        r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+        if r.status_code == 200:
+            for m in r.json().get("matches", []):
+                resultados.append({
+                    "Competition": liga,
+                    "Date": m["utcDate"][:10],
+                    "Hour": m["utcDate"][11:16],
+                    "HomeTeam": m["homeTeam"]["name"],
+                    "AwayTeam": m["awayTeam"]["name"],
+                    "MatchID": m["id"],
+                    "Status": m["status"]
+                })
+    return pd.DataFrame(resultados)
+
+def buscar_h2h(home_id, away_id):
+    """Busca últimos 5 confrontos diretos entre os dois times."""
+    url = f"{API_BASE}/teams/{home_id}/matches"
+    params = {"opponents": away_id, "limit": 5, "status": "FINISHED"}
+    r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    if r.status_code != 200:
+        return []
+    return r.json().get("matches", [])
+
+def buscar_ultimos_jogos(team_id):
+    """Busca últimos 5 jogos do time."""
+    url = f"{API_BASE}/teams/{team_id}/matches"
+    params = {"limit": 5, "status": "FINISHED"}
+    r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    if r.status_code != 200:
+        return []
+    return r.json().get("matches", [])
+
+def desempenho_time(matches, team_name):
+    """Retorna vitórias, empates, derrotas e saldo de gols."""
+    wins = draws = losses = gf = ga = 0
+    for m in matches:
+        score = m.get("score", {}).get("fullTime", {})
+        hg, ag = score.get("home"), score.get("away")
+        if hg is None or ag is None:
+            continue
+        home = m["homeTeam"]["name"]
+        away = m["awayTeam"]["name"]
+        if team_name == home:
+            gf += hg; ga += ag
+            if hg > ag: wins += 1
+            elif hg == ag: draws += 1
+            else: losses += 1
+        elif team_name == away:
+            gf += ag; ga += hg
+            if ag > hg: wins += 1
+            elif ag == hg: draws += 1
+            else: losses += 1
+    jogos = wins + draws + losses
+    if jogos == 0: return (0, 0, 0, 0)
+    saldo = gf - ga
+    return (wins/jogos, draws/jogos, losses/jogos, saldo/jogos)
+
+def calcular_prob(row):
+    """Calcula probabilidade combinando forma + H2H."""
+    home = row["HomeTeam"]
+    away = row["AwayTeam"]
+    home_id = row["HomeID"]
+    away_id = row["AwayID"]
+
+    ult_home = buscar_ultimos_jogos(home_id)
+    ult_away = buscar_ultimos_jogos(away_id)
+    h2h = buscar_h2h(home_id, away_id)
+
+    winH, drawH, lossH, saldoH = desempenho_time(ult_home, home)
+    winA, drawA, lossA, saldoA = desempenho_time(ult_away, away)
+    h2h_home, h2h_draw, h2h_away, _ = desempenho_time(h2h, home)
+
+    p_home = 0.5 * winH + 0.3 * (1 - winA) + 0.2 * h2h_home
+    p_away = 0.5 * winA + 0.3 * (1 - winH) + 0.2 * h2h_away
+    p_draw = 1 - (p_home + p_away)
+    if p_draw < 0: p_draw = 0.05
+    s = p_home + p_draw + p_away
+    return round(p_home/s, 2), round(p_draw/s, 2), round(p_away/s, 2)
+
+def odds_para_probabilidade(odd):
+    return 1/odd if odd and odd > 0 else None
+
+def calcular_ev(prob, odd):
+    return round(prob * odd - 1, 3) if odd else None
+
+# ============================
+# INTERFACE
+# ============================
+
+st.subheader("📅 Partidas do Dia")
+data_escolhida = st.date_input("Selecione a data:", value=date.today())
+data_str = data_escolhida.isoformat()
+
+ligas = {
+    "Brasileirão Série A": "BSA",
+    "Premier League": "PL",
+    "La Liga": "PD",
+    "Bundesliga": "BL1",
+    "Serie A (Itália)": "SA",
+    "Ligue 1": "FL1"
 }
+selec = st.multiselect("Selecione as ligas:", ligas.keys(), default=["Brasileirão Série A"])
 
-# ==============================
-# FUNÇÃO PARA BUSCAR PARTIDAS
-# ==============================
-def buscar_partidas(league_id, data):
-    url = f"{API_URL}/fixtures?league={league_id}&season=2025&date={data}"
-    response = requests.get(url, headers=headers)
+if st.button("Buscar Partidas"):
+    with st.spinner("Buscando partidas e estatísticas..."):
+        codigos = [ligas[l] for l in selec]
+        df = buscar_partidas(data_str, codigos)
+        if df.empty:
+            st.warning("Nenhuma partida encontrada para essa data.")
+        else:
+            # buscar IDs exatos (para usar em H2H)
+            team_ids = {}
+            for l in codigos:
+                try:
+                    resp = requests.get(f"{API_BASE}/competitions/{l}/teams", headers=HEADERS, timeout=10)
+                    if resp.status_code == 200:
+                        for t in resp.json().get("teams", []):
+                            team_ids[t["name"]] = t["id"]
+                except:
+                    continue
+            df["HomeID"] = df["HomeTeam"].map(team_ids)
+            df["AwayID"] = df["AwayTeam"].map(team_ids)
 
-    if response.status_code != 200:
-        st.error("Erro ao buscar partidas. Verifique a chave da API.")
-        return pd.DataFrame()
+            probsH, probsD, probsA = [], [], []
+            for _, r in df.iterrows():
+                try:
+                    pH, pD, pA = calcular_prob(r)
+                except:
+                    pH, pD, pA = 0.33, 0.34, 0.33
+                probsH.append(pH); probsD.append(pD); probsA.append(pA)
+            df["Prob_H"], df["Prob_D"], df["Prob_A"] = probsH, probsD, probsA
 
-    data = response.json().get("response", [])
-    partidas = []
+            st.success("✅ Partidas e probabilidades atualizadas com sucesso!")
+            st.dataframe(df[["Competition", "Date", "Hour", "HomeTeam", "AwayTeam", "Prob_H", "Prob_D", "Prob_A"]])
+            st.session_state["matches_df"] = df
 
-    for jogo in data:
-        partidas.append({
-            "Competição": jogo["league"]["name"],
-            "Data": jogo["fixture"]["date"][:10],
-            "Mandante": jogo["teams"]["home"]["name"],
-            "Visitante": jogo["teams"]["away"]["name"],
-            "Odds (Mandante)": "-",
-            "Odds (Empate)": "-",
-            "Odds (Visitante)": "-"
-        })
+# ============================
+# SIMULADOR
+# ============================
+st.subheader("💸 Simulação de Aposta")
+banca = st.number_input("Banca inicial (R$):", min_value=1.0, value=100.0)
+stake = st.number_input("Valor por aposta (R$):", min_value=1.0, value=10.0)
 
-    return pd.DataFrame(partidas)
-
-# ==============================
-# FUNÇÃO PARA BUSCAR ESTATÍSTICAS REAIS
-# ==============================
-def buscar_estatisticas(df):
-    if df.empty:
-        return df
-
-    estatisticas = []
-    for _, row in df.iterrows():
-        mandante = row["Mandante"]
-        visitante = row["Visitante"]
-
-        try:
-            # Buscar classificação da liga
-            url_class = f"{API_URL}/standings?league={LIGAS_DISPONIVEIS[row['Competição']]}&season=2025"
-            resp_class = requests.get(url_class, headers=headers)
-            tabela = resp_class.json().get("response", [])[0]["league"]["standings"][0]
-
-            pos_mandante = next((t["rank"] for t in tabela if t["team"]["name"] == mandante), "-")
-            pos_visitante = next((t["rank"] for t in tabela if t["team"]["name"] == visitante), "-")
-
-            # Buscar estatísticas de gols
-            url_mand = f"{API_URL}/teams/statistics?league={LIGAS_DISPONIVEIS[row['Competição']]}&season=2025&team={tabela[pos_mandante-1]['team']['id']}"
-            url_vis = f"{API_URL}/teams/statistics?league={LIGAS_DISPONIVEIS[row['Competição']]}&season=2025&team={tabela[pos_visitante-1]['team']['id']}"
-            stats_mand = requests.get(url_mand, headers=headers).json().get("response", {})
-            stats_vis = requests.get(url_vis, headers=headers).json().get("response", {})
-
-            mandante_gols = stats_mand.get("goals", {}).get("for", {}).get("average", {}).get("home", 0)
-            visitante_gols = stats_vis.get("goals", {}).get("for", {}).get("average", {}).get("away", 0)
-
-            # Histórico de confrontos (H2H)
-            url_h2h = f"{API_URL}/fixtures/headtohead?h2h={tabela[pos_mandante-1]['team']['id']}-{tabela[pos_visitante-1]['team']['id']}"
-            h2h = requests.get(url_h2h, headers=headers).json().get("response", [])
-            ultimos_h2h = len(h2h)
-            vitorias_mand = sum(1 for j in h2h if j["teams"]["home"]["name"] == mandante and j["teams"]["home"]["winner"])
-            vitorias_vis = sum(1 for j in h2h if j["teams"]["away"]["name"] == visitante and j["teams"]["away"]["winner"])
-
-            estatisticas.append({
-                "Mandante": mandante,
-                "Visitante": visitante,
-                "Posição Mandante": pos_mandante,
-                "Posição Visitante": pos_visitante,
-                "Gols Médios Mandante": mandante_gols,
-                "Gols Médios Visitante": visitante_gols,
-                "Confrontos Diretos": ultimos_h2h,
-                "Vitórias Mandante": vitorias_mand,
-                "Vitórias Visitante": vitorias_vis
-            })
-        except Exception as e:
-            print(f"Erro ao buscar estatísticas: {e}")
-            estatisticas.append({
-                "Mandante": mandante,
-                "Visitante": visitante,
-                "Posição Mandante": "-",
-                "Posição Visitante": "-",
-                "Gols Médios Mandante": "-",
-                "Gols Médios Visitante": "-",
-                "Confrontos Diretos": "-",
-                "Vitórias Mandante": "-",
-                "Vitórias Visitante": "-"
-            })
-
-    estats_df = pd.DataFrame(estatisticas)
-    return df.merge(estats_df, on=["Mandante", "Visitante"], how="left")
-
-# ==============================
-# INTERFACE DO APP
-# ==============================
-col1, col2 = st.columns(2)
-with col1:
-    liga = st.selectbox("Escolha a Liga:", list(LIGAS_DISPONIVEIS.keys()))
-with col2:
-    data_jogos = st.date_input("Escolha a Data:", datetime.today())
-
-if st.button("🔍 Buscar Jogos"):
-    df_partidas = buscar_partidas(LIGAS_DISPONIVEIS[liga], data_jogos)
-    df_partidas = buscar_estatisticas(df_partidas)
-
-    if df_partidas.empty:
-        st.warning("⚠️ Nenhum jogo encontrado para essa data.")
+if st.button("Simular Retorno"):
+    if "matches_df" not in st.session_state:
+        st.warning("Busque as partidas primeiro.")
     else:
-        st.dataframe(df_partidas, use_container_width=True)
+        df = st.session_state["matches_df"]
+        lucro = 0
+        for _, r in df.iterrows():
+            melhor = max([r["Prob_H"], r["Prob_D"], r["Prob_A"]])
+            lucro += stake * (melhor - 0.5)  # expectativa
+        st.success(f"Banca esperada: R$ {banca + lucro:.2f} (lucro esperado {lucro:.2f})")
 
-        st.markdown("---")
-        st.subheader("🎯 Simulação de Aposta (Retorno Esperado)")
-        for _, row in df_partidas.iterrows():
-            st.write(
-                f"**{row['Mandante']} x {row['Visitante']}**  \n"
-                f"🏅 Posições: {row['Posição Mandante']}º x {row['Posição Visitante']}º  \n"
-                f"⚽ Gols Médios: {row['Gols Médios Mandante']} x {row['Gols Médios Visitante']}  \n"
-                f"🏠 Mandante venceu {row['Vitórias Mandante']} dos últimos {row['Confrontos Diretos']} confrontos"
-            )
-
-# Rodapé
-st.markdown("---")
-st.caption("📈 Desenvolvido em parceria com IA para análise de apostas esportivas - versão beta")
+st.caption("⚠️ Modelo usa últimos jogos e H2H como base. Resultados meramente indicativos.")
