@@ -77,44 +77,64 @@ else:
 # ============================================
 
 import requests
-from datetime import datetime
+from datetime import date, timedelta
 
-st.header("📅 Partidas do Dia (Busca Automática)")
+# =============================
+# BUSCA AUTOMÁTICA DE PARTIDAS
+# =============================
 
-# Configuração inicial (troque pela sua API key quando tiver)
-API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", "COLOQUE_SUA_API_AQUI")
-LEAGUES = ["PL", "PD", "SA", "FL1", "BSA"]  # Premier League, LaLiga, Serie A, Ligue 1, Brasileirão
+st.subheader("📅 Partidas do Dia (Busca Automática)")
 
-if API_KEY == "COLOQUE_SUA_API_AQUI":
+# Seleção de data e ligas
+col1, col2 = st.columns(2)
+data_escolhida = col1.date_input("Escolha uma data:", date.today())
+
+ligas_disponiveis = {
+    "Premier League": "PL",
+    "La Liga": "PD",
+    "Serie A (Itália)": "SA",
+    "Bundesliga": "BL1",
+    "Ligue 1": "FL1",
+    "Brasileirão Série A": "BSA",
+    "Champions League": "CL"
+}
+
+ligas_escolhidas = col2.multiselect("Selecione as ligas:", list(ligas_disponiveis.keys()), default=["Premier League"])
+
+# Chave da API
+import os
+api_key = os.getenv("FOOTBALL_DATA_API_KEY")
+
+if not api_key:
     st.warning("⚠️ Adicione sua API Key em .streamlit/secrets.toml para ativar a busca automática.")
 else:
-    hoje = datetime.now().strftime("%Y-%m-%d")
-    url = f"https://api.football-data.org/v4/matches?dateFrom={hoje}&dateTo={hoje}"
-    headers = {"X-Auth-Token": API_KEY}
+    url_base = "https://api.football-data.org/v4/competitions/{liga}/matches"
+    headers = {"X-Auth-Token": api_key}
 
-    try:
-        response = requests.get(url, headers=headers)
-        data = response.json()
+    partidas_encontradas = False
 
-        if "matches" in data:
-            jogos_hoje = [
-                {
-                    "Competição": match["competition"]["name"],
-                    "Casa": match["homeTeam"]["name"],
-                    "Fora": match["awayTeam"]["name"],
-                    "Status": match["status"]
-                }
-                for match in data["matches"]
-                if match["competition"]["code"] in LEAGUES
-            ]
+    for nome_liga, codigo_liga in ligas_disponiveis.items():
+        if nome_liga not in ligas_escolhidas:
+            continue
 
-            if jogos_hoje:
-                st.success(f"{len(jogos_hoje)} partidas encontradas para hoje!")
-                st.dataframe(jogos_hoje)
-            else:
-                st.info("Nenhuma partida encontrada para as ligas selecionadas hoje.")
+        url = url_base.format(liga=codigo_liga)
+        params = {"dateFrom": data_escolhida.isoformat(), "dateTo": data_escolhida.isoformat()}
+        resp = requests.get(url, headers=headers, params=params)
+
+        if resp.status_code == 200:
+            dados = resp.json()
+            partidas = dados.get("matches", [])
+
+            if len(partidas) > 0:
+                partidas_encontradas = True
+                st.markdown(f"### 🏆 {nome_liga}")
+                for p in partidas:
+                    casa = p['homeTeam']['name']
+                    fora = p['awayTeam']['name']
+                    hora = p['utcDate'][11:16]
+                    st.write(f"**{hora}** — {casa} 🆚 {fora}")
         else:
-            st.warning("Nenhum dado recebido da API.")
+            st.error(f"Erro ao buscar {nome_liga}: {resp.status_code}")
 
-    except Exception as e:
-        st.error(f"Erro ao buscar dados da API: {e}")
+    if not partidas_encontradas:
+        st.info("Nenhuma partida encontrada para as ligas selecionadas nesta data.")
