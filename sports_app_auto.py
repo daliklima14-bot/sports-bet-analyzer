@@ -405,14 +405,14 @@ if btn_fetch:
                 # fallback model
                 mock_df = df_matches.copy()
 df_matches = mock_df
-                df_matches = pd.DataFrame(df_matches)
-                df_matches = df_matches.reset_index(drop=True)
+df_matches = pd.DataFrame(df_matches)
+df_matches = df_matches.reset_index(drop=True)
                 # generate model probs per row
                 gens = [model_probs_from_form([], []) for _ in range(len(df_matches))]
                 df_matches["Prob_H"], df_matches["Prob_D"], df_matches["Prob_A"] = zip(*gens)
 
             # combinar com form e h2h
-            df_matches = combine_probabilities(df_matches, use_h2h=include_h2h, last_n=int(last_n))
+df_matches = combine_probabilities(df_matches, use_h2h=include_h2h, last_n=int(last_n))
             st.session_state["matches_df"] = df_matches
             st.success("Partidas carregadas e probabilidades calculadas.")
 
