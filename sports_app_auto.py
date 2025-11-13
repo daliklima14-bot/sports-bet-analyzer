@@ -132,28 +132,6 @@ if 'df' in locals() or 'df' in globals():
 else:
     st.info("Envie o arquivo Excel para começar a análise.")
 
-        # ==============================
-        # SIMULAÇÃO DE APOSTA
-        # ==============================
-        st.subheader("💰 Simulação de Aposta")
-        valor_aposta = st.number_input("Valor da aposta (R$)", min_value=1.0, value=10.0, step=1.0)
-
-        if st.button("Simular ganhos"):
-            if 'odd_casa' in df_filtrado:
-                df_filtrado['retorno'] = np.where(df_filtrado['resultado'] == 'Casa',
-                                                  valor_aposta * df_filtrado['odd_casa'],
-                                                  0)
-                ganho_total = df_filtrado['retorno'].sum()
-                st.success(f"💵 Ganho total simulado: R$ {ganho_total:,.2f}")
-            else:
-                st.warning("O arquivo precisa conter uma coluna chamada 'odd_casa' e 'resultado'.")
-
-    except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
-
-else:
-    st.info("📁 Faça upload do seu arquivo Excel para começar a análise.")
-    
 # ==============================
 # BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API + ANÁLISE)
 # ==============================
@@ -271,5 +249,64 @@ else:
                 st.error(f"Erro ao acessar dados de {nome_liga}: {resp.status_code}")
     except Exception as e:
         st.error(f"Erro ao buscar partidas: {e}")
+        
+        # =========================================
+# 💰 SIMULAÇÃO DE APOSTA
+# =========================================
+st.subheader("💰 Simulação de Aposta")
+
+try:
+    # Verifica se já há dados carregados
+    if 'df' in locals() or 'df' in globals():
+        # Permite ao usuário configurar os parâmetros da aposta
+        st.markdown("### ⚙️ Configurações da Simulação")
+        banca_inicial = st.number_input("💵 Banca inicial (R$)", min_value=10.0, value=100.0, step=10.0)
+        stake = st.number_input("🎯 Valor da aposta por jogo (R$)", min_value=1.0, value=10.0, step=1.0)
+        odd_minima = st.number_input("📉 Odd mínima", min_value=1.01, value=1.5, step=0.01)
+        odd_maxima = st.number_input("📈 Odd máxima", min_value=1.01, value=3.5, step=0.01)
+
+        # Filtro de odds válidas
+        if all(col in df.columns for col in ['Home_Odd', 'Draw_Odd', 'Away_Odd']):
+            df_filtrado = df[
+                (df['Home_Odd'] >= odd_minima) & (df['Home_Odd'] <= odd_maxima) |
+                (df['Draw_Odd'] >= odd_minima) & (df['Draw_Odd'] <= odd_maxima) |
+                (df['Away_Odd'] >= odd_minima) & (df['Away_Odd'] <= odd_maxima)
+            ]
+
+            # Cálculo do retorno esperado
+            df_filtrado["Retorno_Esperado"] = (
+                df_filtrado["Pred_H"] * df_filtrado["Home_Odd"] +
+                df_filtrado["Pred_D"] * df_filtrado["Draw_Odd"] +
+                df_filtrado["Pred_A"] * df_filtrado["Away_Odd"]
+            ) - 1
+
+            # Mostra jogos com melhor valor esperado
+            melhores_jogos = df_filtrado.sort_values("Retorno_Esperado", ascending=False).head(10)
+
+            st.markdown("### 🏆 Melhores Oportunidades de Aposta (Value Bets)")
+            st.dataframe(
+                melhores_jogos[["HomeTeam", "AwayTeam", "Home_Odd", "Draw_Odd", "Away_Odd", "Retorno_Esperado"]]
+                .rename(columns={
+                    "HomeTeam": "Mandante",
+                    "AwayTeam": "Visitante",
+                    "Home_Odd": "Odd Casa",
+                    "Draw_Odd": "Odd Empate",
+                    "Away_Odd": "Odd Fora",
+                    "Retorno_Esperado": "Valor Esperado"
+                })
+            )
+
+            # Simulação da banca
+            lucro_total = (melhores_jogos["Retorno_Esperado"].mean() or 0) * stake * len(melhores_jogos)
+            banca_final = banca_inicial + lucro_total
+
+            st.success(f"💰 Banca final estimada: R$ {banca_final:.2f}")
+            st.info(f"📊 Lucro estimado: R$ {lucro_total:.2f}")
+        else:
+            st.warning("⚠️ Seu arquivo Excel precisa conter as colunas: Home_Odd, Draw_Odd e Away_Odd para simular apostas.")
+    else:
+        st.warning("📁 Faça upload do arquivo Excel antes de usar a simulação.")
+except Exception as e:
+    st.error(f"❌ Erro na simulação: {e}")
 
 
