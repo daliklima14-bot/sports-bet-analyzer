@@ -95,7 +95,7 @@ ligas_dict = {
 }
 
 # Selecionar data e ligas
-data_escolhida = st.date_input("Escolha uma data:", date.today())
+data_escolhida = st.date_input("Selecione a data para buscar jogos:", date.today(), key="data_busca")
 data_formatada = data_escolhida.strftime("%Y-%m-%d")
 
 ligas_escolhidas = st.multiselect(
