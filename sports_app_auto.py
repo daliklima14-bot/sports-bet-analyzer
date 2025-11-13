@@ -26,6 +26,7 @@ if uploaded_file:
         st.success("✅ Arquivo carregado com sucesso!")
         st.write("Prévia dos dados:")
         st.dataframe(df.head())
+        
         except Exception as e:
         st.error(f"❌ Erro ao carregar o arquivo: {e}")
 
