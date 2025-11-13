@@ -29,12 +29,17 @@ headers = {"X-Auth-Token": API_KEY}
 def buscar_partidas(data_jogos, ligas):
     """Busca partidas das ligas selecionadas para uma data específica."""
     resultados = []
+
     for liga in ligas:
-        url = f"{API_URL}?dateFrom={data_jogos}&dateTo={data_jogos}&competitions={liga}"
+        # Monta URL correta no formato esperado pela API football-data.org
+        url = f"https://api.football-data.org/v4/competitions/{liga}/matches?dateFrom={data_jogos}&dateTo={data_jogos}"
+
         try:
             resp = requests.get(url, headers=headers)
             if resp.status_code == 200:
                 dados = resp.json().get("matches", [])
+                if not dados:
+                    st.warning(f"Nenhuma partida encontrada para a liga {liga} nessa data.")
                 for match in dados:
                     resultados.append({
                         "Competição": liga,
@@ -45,9 +50,10 @@ def buscar_partidas(data_jogos, ligas):
                         "Status": match["status"]
                     })
             else:
-                st.warning(f"⚠️ Erro ao buscar {liga}: código {resp.status_code}")
+                st.warning(f"Erro ao buscar {liga}: {resp.status_code} - {resp.text}")
         except Exception as e:
-            st.error(f"❌ Erro: {e}")
+            st.error(f"Erro: {e}")
+
     return pd.DataFrame(resultados)
 
 
