@@ -85,6 +85,32 @@ def buscar_partidas(data_jogos: date, ligas_selecionadas: list):
 
     df = pd.DataFrame(resultados)
     return df
+
+# =======================================
+# Função para buscar dados H2H (últimos 5 confrontos)
+# =======================================
+def buscar_h2h(home_id, away_id):
+    if not API_KEY:
+        st.warning("⚠️ Sem API key configurada.")
+        return []
+
+    url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures/headtohead?h2h={home_id}-{away_id}&last=5"
+    headers = {
+        "x-rapidapi-key": API_KEY,
+        "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=12)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("response", [])
+        else:
+            st.warning(f"Erro ao buscar H2H: {resp.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Erro ao acessar API H2H: {e}")
+        return []
 st.dataframe(
     df.rename(columns={
         "Competition": "Comp", "Date": "Data", "Hour": "Hora",
