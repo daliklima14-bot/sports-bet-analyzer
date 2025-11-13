@@ -72,3 +72,49 @@ if uploaded_file:
 
 else:
     st.info("📁 Faça upload do seu arquivo Excel para começar a análise.")
+# ============================================
+# BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API)
+# ============================================
+
+import requests
+from datetime import datetime
+
+st.header("📅 Partidas do Dia (Busca Automática)")
+
+# Configuração inicial (troque pela sua API key quando tiver)
+API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", "COLOQUE_SUA_API_AQUI")
+LEAGUES = ["PL", "PD", "SA", "FL1", "BSA"]  # Premier League, LaLiga, Serie A, Ligue 1, Brasileirão
+
+if API_KEY == "COLOQUE_SUA_API_AQUI":
+    st.warning("⚠️ Adicione sua API Key em .streamlit/secrets.toml para ativar a busca automática.")
+else:
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    url = f"https://api.football-data.org/v4/matches?dateFrom={hoje}&dateTo={hoje}"
+    headers = {"X-Auth-Token": API_KEY}
+
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        if "matches" in data:
+            jogos_hoje = [
+                {
+                    "Competição": match["competition"]["name"],
+                    "Casa": match["homeTeam"]["name"],
+                    "Fora": match["awayTeam"]["name"],
+                    "Status": match["status"]
+                }
+                for match in data["matches"]
+                if match["competition"]["code"] in LEAGUES
+            ]
+
+            if jogos_hoje:
+                st.success(f"{len(jogos_hoje)} partidas encontradas para hoje!")
+                st.dataframe(jogos_hoje)
+            else:
+                st.info("Nenhuma partida encontrada para as ligas selecionadas hoje.")
+        else:
+            st.warning("Nenhum dado recebido da API.")
+
+    except Exception as e:
+        st.error(f"Erro ao buscar dados da API: {e}")
