@@ -22,12 +22,11 @@ uploaded_file = st.file_uploader("Envie o arquivo Excel com previsões (ex: resu
 if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file)
-
         st.success("✅ Arquivo carregado com sucesso!")
-        st.write("Prévia dos dados:")
+        st.write("📄 Prévia dos dados:")
         st.dataframe(df.head())
-        
-        except Exception as e:
+
+    except Exception as e:
         st.error(f"❌ Erro ao carregar o arquivo: {e}")
 
         # ==============================
