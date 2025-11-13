@@ -1,45 +1,43 @@
 import streamlit as st
-import requests
 import pandas as pd
-from datetime import date
-import time
+import requests
+import random
+from datetime import datetime
 
-# -----------------------------------
+# ============================
 # ⚙️ CONFIGURAÇÕES INICIAIS
-# -----------------------------------
+# ============================
 
 st.set_page_config(page_title="Analisador de Apostas", page_icon="⚽", layout="centered")
 
 st.title("⚽ Analisador e Simulador de Apostas Esportivas")
-st.write("App automatizado para buscar estatísticas e calcular probabilidades das partidas do dia.")
+st.write("App automatizado para buscar estatísticas e calcular probabilidades reais das partidas do dia.")
 
-# 🔑 Pega a API Key direto do secret configurado no Streamlit
+# Pega a API key configurada no Streamlit
 API_KEY = st.secrets["FOOTBALL_DATA_API_KEY"]
 
-# 🌍 URL base da API
-API_URL = "https://api.football-data.org/v4/matches"
-
-# 🧾 Cabeçalho da requisição
+# URL base da API
+BASE_URL = "https://api.football-data.org/v4"
 headers = {"X-Auth-Token": API_KEY}
 
 
-# -----------------------------------
+# ============================
 # 🔍 FUNÇÃO PARA BUSCAR PARTIDAS
-# -----------------------------------
+# ============================
+
 def buscar_partidas(data_jogos, ligas):
-    """Busca partidas das ligas selecionadas para uma data específica."""
     resultados = []
 
     for liga in ligas:
-        # Monta URL correta no formato esperado pela API football-data.org
-        url = f"https://api.football-data.org/v4/competitions/{liga}/matches?dateFrom={data_jogos}&dateTo={data_jogos}"
-
+        url = f"{BASE_URL}/competitions/{liga}/matches?dateFrom={data_jogos}&dateTo={data_jogos}"
         try:
             resp = requests.get(url, headers=headers)
             if resp.status_code == 200:
                 dados = resp.json().get("matches", [])
                 if not dados:
                     st.warning(f"Nenhuma partida encontrada para a liga {liga} nessa data.")
+                    continue
+
                 for match in dados:
                     resultados.append({
                         "Competição": liga,
@@ -47,72 +45,124 @@ def buscar_partidas(data_jogos, ligas):
                         "Hora": match["utcDate"][11:16],
                         "Mandante": match["homeTeam"]["name"],
                         "Visitante": match["awayTeam"]["name"],
-                        "Status": match["status"]
+                        "Status": match["status"],
+                        "ID": match["id"]
                     })
             else:
-                st.warning(f"Erro ao buscar {liga}: {resp.status_code} - {resp.text}")
+                st.warning(f"Erro ao buscar {liga}: ({resp.status_code}) - {resp.text}")
+
         except Exception as e:
             st.error(f"Erro: {e}")
 
     return pd.DataFrame(resultados)
 
 
-def calcular_probabilidades(df):
-    """Cria probabilidades simuladas (mock) para teste."""
-    import random
-    df["Prob_Mandante"] = [round(random.uniform(0.4, 0.7), 2) for _ in range(len(df))]
-    df["Prob_Visitante"] = [round(1 - p, 2) for p in df["Prob_Mandante"]]
-    df["Odds_Mandante"] = [round(1 / p, 2) for p in df["Prob_Mandante"]]
-    df["Odds_Visitante"] = [round(1 / p, 2) for p in df["Prob_Visitante"]]
+# ============================
+# 💰 FUNÇÃO PARA BUSCAR ODDS REAIS
+# ============================
+
+def buscar_odds_reais(match_id):
+    try:
+        url = f"{BASE_URL}/matches/{match_id}"
+        resp = requests.get(url, headers=headers)
+        if resp.status_code == 200:
+            data = resp.json()
+            odds = data.get("odds", {})
+            if odds:
+                home = odds.get("homeWin", None)
+                draw = odds.get("draw", None)
+                away = odds.get("awayWin", None)
+                return home, draw, away
+    except:
+        pass
+    return None, None, None
+
+
+# ============================
+# 📊 CALCULAR PROBABILIDADES
+# ============================
+
+def calcular_probabilidades(df, modo):
+    probs_mandante = []
+    probs_visitante = []
+
+    for _, row in df.iterrows():
+        if modo == "Odds Reais (API)":
+            odd_home, odd_draw, odd_away = buscar_odds_reais(row["ID"])
+            if odd_home and odd_away:
+                p_home = round((1 / odd_home) / ((1 / odd_home) + (1 / odd_away)), 2)
+                p_away = round(1 - p_home, 2)
+            else:
+                p_home = round(random.uniform(0.4, 0.7), 2)
+                p_away = round(1 - p_home, 2)
+        else:
+            # Simulação aleatória
+            p_home = round(random.uniform(0.4, 0.7), 2)
+            p_away = round(1 - p_home, 2)
+
+        probs_mandante.append(p_home)
+        probs_visitante.append(p_away)
+
+    df["Prob_Mandante"] = probs_mandante
+    df["Prob_Visitante"] = probs_visitante
     return df
 
 
-def simular_aposta(df, banca, stake):
-    """Simula retorno de apostas baseadas nas probabilidades."""
-    df["Lucro_Esperado"] = round((df["Prob_Mandante"] * (df["Odds_Mandante"] - 1) - (1 - df["Prob_Mandante"])) * stake, 2)
-    ganho_total = df["Lucro_Esperado"].sum()
-    nova_banca = banca + ganho_total
-    return df, ganho_total, nova_banca
+# ============================
+# 🎲 SIMULAÇÃO DE APOSTA
+# ============================
 
-# -------------------------------
-# 📅 BUSCA DE PARTIDAS
-# -------------------------------
+def simular_apostas(banca, stake, df):
+    resultados = []
+    for _, row in df.iterrows():
+        ganho = round(stake * (1 / row["Prob_Mandante"]), 2)
+        perda = stake
+        resultados.append(ganho - perda)
+    total = round(sum(resultados), 2)
+    banca_final = round(banca + total, 2)
+    return banca_final, total
+
+
+# ============================
+# 🧩 INTERFACE
+# ============================
+
 st.subheader("📅 Partidas do Dia")
 
-data_jogos = st.date_input("Selecione a data:", value=date.today())
-ligas_disponiveis = {
+data_jogos = st.date_input("Selecione a data:", datetime.now())
+ligas_disp = {
     "Brasileirão Série A": "BSA",
     "Premier League": "PL",
     "La Liga": "PD",
-    "Champions League": "CL"
+    "Serie A (Itália)": "SA",
+    "Bundesliga": "BL1"
 }
-ligas_selecionadas = st.multiselect("Selecione as ligas:", list(ligas_disponiveis.keys()), default=["Brasileirão Série A"])
+ligas = st.multiselect("Selecione as ligas:", list(ligas_disp.keys()), default=["Brasileirão Série A"])
+
+# Novo seletor de modo de análise
+modo = st.radio("Modo de análise:", ["Odds Reais (API)", "Simulação Aleatória"], horizontal=True)
 
 if st.button("Buscar Partidas"):
-    ligas_api = [ligas_disponiveis[l] for l in ligas_selecionadas]
-    with st.spinner("Buscando partidas e calculando probabilidades..."):
-        time.sleep(1)
-        df_jogos = buscar_partidas(str(data_jogos), ligas_api)
-        if not df_jogos.empty:
-            df_prob = calcular_probabilidades(df_jogos)
-            st.success("✅ Partidas e probabilidades obtidas com sucesso!")
-            st.dataframe(df_prob)
-        else:
-            st.warning("Nenhuma partida encontrada para essa data.")
+    ligas_cod = [ligas_disp[l] for l in ligas]
+    df_partidas = buscar_partidas(data_jogos, ligas_cod)
+    if not df_partidas.empty:
+        df_prob = calcular_probabilidades(df_partidas, modo)
+        st.success("✅ Partidas e probabilidades obtidas com sucesso!")
+        st.dataframe(df_prob)
+        st.session_state["df_partidas"] = df_prob
+    else:
+        st.warning("Nenhuma partida encontrada para essa data.")
 
-# -------------------------------
-# 💰 SIMULAÇÃO DE APOSTA
-# -------------------------------
-st.subheader("💰 Simulação de Aposta")
+st.subheader("💸 Simulação de Aposta")
 
-banca_inicial = st.number_input("Informe sua banca inicial (R$):", min_value=10.0, value=100.0, step=10.0)
+banca = st.number_input("Informe sua banca inicial (R$):", min_value=10.0, value=100.0, step=10.0)
 stake = st.number_input("Informe o valor por aposta (stake) (R$):", min_value=1.0, value=10.0, step=1.0)
 
 if st.button("Simular Retorno"):
-    try:
-        df_sim, ganho, nova_banca = simular_aposta(df_prob, banca_inicial, stake)
-        st.dataframe(df_sim[["Mandante", "Visitante", "Odds_Mandante", "Odds_Visitante", "Lucro_Esperado"]])
-        st.success(f"💵 Lucro total estimado: R$ {ganho:.2f}")
-        st.info(f"Nova banca estimada: R$ {nova_banca:.2f}")
-    except Exception:
-        st.warning("⚠️ Busque as partidas antes de simular.")
+    if "df_partidas" not in st.session_state or st.session_state["df_partidas"].empty:
+        st.warning("⚠️ Nenhuma partida disponível para simulação.")
+    else:
+        df = st.session_state["df_partidas"]
+        banca_final, lucro_total = simular_apostas(banca, stake, df)
+        st.info(f"💰 Lucro total estimado: R$ {lucro_total:.2f}")
+        st.success(f"🏦 Banca final projetada: R$ {banca_final:.2f}")
