@@ -403,7 +403,8 @@ if btn_fetch:
                 df_matches["Prob_H"], df_matches["Prob_D"], df_matches["Prob_A"] = zip(*probs)
             else:
                 # fallback model
-                df_matches = mock_df := df_matches.copy()
+                mock_df = df_matches.copy()
+df_matches = mock_df
                 df_matches = pd.DataFrame(df_matches)
                 df_matches = df_matches.reset_index(drop=True)
                 # generate model probs per row
