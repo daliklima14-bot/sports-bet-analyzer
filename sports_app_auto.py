@@ -121,7 +121,7 @@ def buscar_partidas(data_jogos: date, ligas_selecionadas: list):
 
     df = pd.DataFrame(resultados)
     return df
-st.dataframe(
+st.dataframe(df_matches,
     df.rename(columns={
         "Competition": "Comp", "Date": "Data", "Hour": "Hora",
         "HomeTeam": "Mandante", "AwayTeam": "Visitante",
@@ -131,6 +131,88 @@ st.dataframe(
     }),
     use_container_width=True
 )
+# ==========================================================
+# 🔍 Exibir últimos jogos (forma) e confrontos diretos (H2H)
+# ==========================================================
+if not df_matches.empty:
+    st.subheader("📊 Histórico e Forma Recente")
+
+    for _, row in df_matches.iterrows():
+        home_team = row['Home']
+        away_team = row['Away']
+
+        st.markdown(f"### ⚔️ {home_team} 🆚 {away_team}")
+
+        # Expanders para forma e H2H
+        with st.expander(f"📈 Últimos 5 jogos do {home_team}"):
+            try:
+                url_home_form = f"https://api.theapifootball.com/?action=get_events&team_id={row['HomeID']}&from=2025-01-01&to=2025-12-31&APIkey={API_KEY}"
+                r_home = requests.get(url_home_form)
+                if r_home.status_code == 200:
+                    data_home = r_home.json()[:5]
+                    df_home = pd.DataFrame([{
+                        "Data": g.get("match_date"),
+                        "Adversário": g.get("match_awayteam_name") if g.get("match_hometeam_name") == home_team else g.get("match_hometeam_name"),
+                        "Placar": f"{g.get('match_hometeam_score')} - {g.get('match_awayteam_score')}",
+                        "Resultado": (
+                            "✅ Vitória" if (
+                                (g.get("match_hometeam_name") == home_team and int(g.get("match_hometeam_score") or 0) > int(g.get("match_awayteam_score") or 0)) or
+                                (g.get("match_awayteam_name") == home_team and int(g.get("match_awayteam_score") or 0) > int(g.get("match_hometeam_score") or 0))
+                            ) else "❌ Derrota" if (
+                                (g.get("match_hometeam_name") == home_team and int(g.get("match_hometeam_score") or 0) < int(g.get("match_awayteam_score") or 0)) or
+                                (g.get("match_awayteam_name") == home_team and int(g.get("match_awayteam_score") or 0) < int(g.get("match_hometeam_score") or 0))
+                            ) else "🤝 Empate"
+                        )
+                    } for g in data_home])
+                    st.dataframe(df_home)
+                else:
+                    st.warning("Não foi possível carregar os últimos jogos do mandante.")
+            except Exception as e:
+                st.error(f"Erro ao carregar forma do mandante: {e}")
+
+        with st.expander(f"📉 Últimos 5 jogos do {away_team}"):
+            try:
+                url_away_form = f"https://api.theapifootball.com/?action=get_events&team_id={row['AwayID']}&from=2025-01-01&to=2025-12-31&APIkey={API_KEY}"
+                r_away = requests.get(url_away_form)
+                if r_away.status_code == 200:
+                    data_away = r_away.json()[:5]
+                    df_away = pd.DataFrame([{
+                        "Data": g.get("match_date"),
+                        "Adversário": g.get("match_awayteam_name") if g.get("match_hometeam_name") == away_team else g.get("match_hometeam_name"),
+                        "Placar": f"{g.get('match_hometeam_score')} - {g.get('match_awayteam_score')}",
+                        "Resultado": (
+                            "✅ Vitória" if (
+                                (g.get("match_hometeam_name") == away_team and int(g.get("match_hometeam_score") or 0) > int(g.get("match_awayteam_score") or 0)) or
+                                (g.get("match_awayteam_name") == away_team and int(g.get("match_awayteam_score") or 0) > int(g.get("match_hometeam_score") or 0))
+                            ) else "❌ Derrota" if (
+                                (g.get("match_hometeam_name") == away_team and int(g.get("match_hometeam_score") or 0) < int(g.get("match_awayteam_score") or 0)) or
+                                (g.get("match_awayteam_name") == away_team and int(g.get("match_awayteam_score") or 0) < int(g.get("match_hometeam_score") or 0))
+                            ) else "🤝 Empate"
+                        )
+                    } for g in data_away])
+                    st.dataframe(df_away)
+                else:
+                    st.warning("Não foi possível carregar os últimos jogos do visitante.")
+            except Exception as e:
+                st.error(f"Erro ao carregar forma do visitante: {e}")
+
+        with st.expander(f"🏟️ Confrontos Diretos (H2H)"):
+            try:
+                url_h2h = f"https://api.theapifootball.com/?action=get_H2H&firstTeam={home_team}&secondTeam={away_team}&APIkey={API_KEY}"
+                r_h2h = requests.get(url_h2h)
+                if r_h2h.status_code == 200:
+                    data_h2h = r_h2h.json().get("firstTeam_VS_secondTeam", [])[:5]
+                    df_h2h = pd.DataFrame([{
+                        "Data": g.get("match_date"),
+                        "Casa": g.get("match_hometeam_name"),
+                        "Fora": g.get("match_awayteam_name"),
+                        "Placar": f"{g.get('match_hometeam_score')} - {g.get('match_awayteam_score')}"
+                    } for g in data_h2h])
+                    st.dataframe(df_h2h)
+                else:
+                    st.warning("Não foi possível carregar o histórico H2H.")
+            except Exception as e:
+                st.error(f"Erro ao carregar H2H: {e}")
 def buscar_odds_para_match(match_id: str):
     
     # Buscar histórico H2H e últimos jogos por time
