@@ -51,9 +51,9 @@ def safe_get(url, params=None, headers=None, timeout=12):
         if r.status_code == 200:
             return r.json()
         else:
-            return {"_error_": f"{r.status_code} - {r.text}"}
+            return {"__error__": f"{r.status_code} - {r.text}"}
     except Exception as e:
-        return {"_error_": str(e)}
+        return {"__error__": str(e)}
 
 # -------------------------
 # BUSCAR PARTIDAS (fixtures) por liga e data
@@ -80,10 +80,10 @@ def fetch_odds_for_match(match_id: int):
     url = f"{API_URL}/odds"
     params = {"fixture": match_id}
     resp = safe_get(url, params=params)
-    if "_error_" in resp:
+    if "__error__" in resp:
         # fallback: try to see if match details contain bookmakers / odds
         details = fetch_match_details(match_id)
-        if "_error_" in details:
+        if "__error__" in details:
             return None
         # attempt to parse possible odds locations defensively
         responses = details.get("response", [])
@@ -143,7 +143,7 @@ def fetch_last_matches(team_id: int, n: int = 5):
     url = f"{API_URL}/fixtures"
     params = {"team": team_id, "last": n, "status": "FT"}  # 'last' often supported
     resp = safe_get(url, params=params)
-    if "_error_" in resp:
+    if "__error__" in resp:
         return []
     return resp.get("response", [])
 
@@ -157,7 +157,7 @@ def fetch_h2h(home_id: int, away_id: int, n: int = 5):
     url = f"{API_URL}/fixtures"
     params = {"h2h": f"{home_id}-{away_id}", "last": n}
     resp = safe_get(url, params=params)
-    if "_error_" in resp:
+    if "__error__" in resp:
         return []
     return resp.get("response", [])
 
@@ -242,8 +242,8 @@ def get_matches_dataframe(selected_leagues, date_obj: date):
         if league_id is None:
             continue
         resp = fetch_fixtures_by_league_and_date(league_id, date_iso)
-        if "_error_" in resp:
-            st.warning(f"Erro ao buscar fixtures {league_name}: {resp['_error_']}")
+        if "__error__" in resp:
+            st.warning(f"Erro ao buscar fixtures {league_name}: {resp['__error__']}")
             continue
         fixtures = resp.get("response", [])
         for f in fixtures:
@@ -403,16 +403,15 @@ if btn_fetch:
                 df_matches["Prob_H"], df_matches["Prob_D"], df_matches["Prob_A"] = zip(*probs)
             else:
                 # fallback model
-                mock_df = df_matches.copy()
-df_matches = mock_df
-df_matches = pd.DataFrame(df_matches)
-df_matches = df_matches.reset_index(drop=True)
+                df_matches = mock_df := df_matches.copy()
+                df_matches = pd.DataFrame(df_matches)
+                df_matches = df_matches.reset_index(drop=True)
                 # generate model probs per row
                 gens = [model_probs_from_form([], []) for _ in range(len(df_matches))]
                 df_matches["Prob_H"], df_matches["Prob_D"], df_matches["Prob_A"] = zip(*gens)
 
             # combinar com form e h2h
-df_matches = combine_probabilities(df_matches, use_h2h=include_h2h, last_n=int(last_n))
+            df_matches = combine_probabilities(df_matches, use_h2h=include_h2h, last_n=int(last_n))
             st.session_state["matches_df"] = df_matches
             st.success("Partidas carregadas e probabilidades calculadas.")
 
@@ -471,7 +470,8 @@ if not df_show.empty:
                 st.dataframe(pd.DataFrame(rows))
             else:
                 st.info(f"Últimos jogos de {home} não disponíveis.")
-              # Away last 5
+
+        # Away last 5
         with st.expander(f"📉 Últimos {last_n} jogos de {away}"):
             last_away = fetch_last_matches(aid, n=last_n)
             if last_away:
