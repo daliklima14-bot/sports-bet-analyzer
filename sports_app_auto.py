@@ -76,8 +76,95 @@ else:
 # BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API)
 # ============================================
 
+# ==============================
+# BUSCA AUTOMÁTICA DE PARTIDAS DO DIA (API)
+# ==============================
 import requests
-from datetime import date, timedelta
+from datetime import datetime, date
+import streamlit as st
+
+st.header("📅 Partidas do Dia (Busca Automática)")
+
+# Chave da API (configurada no Secrets)
+API_KEY = st.secrets.get("FOOTBALL_DATA_API_KEY", "COLOQUE_SUA_API_AQUI")
+
+# Selecionar data (por padrão: hoje)
+data_escolhida = st.date_input("Escolha uma data:", date.today())
+data_formatada = data_escolhida.strftime("%Y-%m-%d")
+
+# Ligas disponíveis
+ligas_dict = {
+    "Premier League": "PL",
+    "La Liga": "PD",
+    "Série A (Itália)": "SA",
+    "Bundesliga": "BL1",
+    "Ligue 1": "FL1",
+    "Brasileirão Série A": "BSA",
+}
+
+ligas_escolhidas = st.multiselect(
+    "Selecione as ligas:",
+    options=list(ligas_dict.keys()),
+    default=["Brasileirão Série A"]
+)
+
+if not API_KEY or API_KEY.startswith("COLOQUE"):
+    st.warning("⚠️ Configure sua chave API no .streamlit/secrets.toml")
+else:
+    try:
+        headers = {"X-Auth-Token": API_KEY}
+        st.info(f"🔄 Buscando partidas de {data_formatada}...")
+        jogos_encontrados = []
+
+        for nome_liga in ligas_escolhidas:
+            liga_id = ligas_dict[nome_liga]
+            url = f"https://api.football-data.org/v4/competitions/{liga_id}/matches?dateFrom={data_formatada}&dateTo={data_formatada}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                partidas = data.get("matches", [])
+                if partidas:
+                    st.subheader(f"🏆 {nome_liga}")
+                    for p in partidas:
+                        casa = p["homeTeam"]["name"]
+                        fora = p["awayTeam"]["name"]
+                        hora = p["utcDate"][11:16]
+                        status = p["status"]
+
+                        # Busca odds médias
+                        odds_url = f"https://api.football-data.org/v4/matches/{p['id']}/odds"
+                        odds_resp = requests.get(odds_url, headers=headers)
+                        if odds_resp.status_code == 200:
+                            odds_data = odds_resp.json()
+                            mercados = odds_data.get("bookmakers", [])
+                            if mercados:
+                                try:
+                                    mercado_principal = mercados[0]["bets"][0]["values"]
+                                    odd_casa = float(mercado_principal[0]["odd"])
+                                    odd_empate = float(mercado_principal[1]["odd"])
+                                    odd_fora = float(mercado_principal[2]["odd"])
+                                    total = (1/odd_casa + 1/odd_empate + 1/odd_fora)
+                                    prob_casa = (1/odd_casa)/total*100
+                                    prob_empate = (1/odd_empate)/total*100
+                                    prob_fora = (1/odd_fora)/total*100
+
+                                    st.write(
+                                        f"**{hora} — {casa} 🆚 {fora}**  _(Status: {status})_"
+                                    )
+                                    st.write(
+                                        f"➡️ **Probabilidades:** 🏠 {prob_casa:.1f}% | 🤝 {prob_empate:.1f}% | 🛫 {prob_fora:.1f}%"
+                                    )
+                                except Exception:
+                                    st.write(f"**{hora} — {casa} 🆚 {fora}** _(odds não disponíveis)_")
+                        else:
+                            st.write(f"**{hora} — {casa} 🆚 {fora}** _(sem odds disponíveis)_")
+                else:
+                    st.info(f"Nenhuma partida encontrada para {nome_liga}.")
+            else:
+                st.error(f"Erro ao acessar dados de {nome_liga}: {resp.status_code}")
+    except Exception as e:
+        st.error(f"Erro ao buscar partidas: {e}")
 
 # =============================
 # BUSCA AUTOMÁTICA DE PARTIDAS
