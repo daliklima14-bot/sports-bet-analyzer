@@ -107,21 +107,33 @@ def fetch_odds_for_match(match_id):
     params = {"fixture": match_id, "bookmaker": 1}  # Bet365
     resp = safe_get(url, params=params, headers=HEADERS_API_FOOTBALL)
 
-    if "error" in resp:
+    if "__error__" in resp:
         return None
 
     try:
-        bets = resp.get("response", [])[0].get("bookmakers", [])
+        # The response structure: resp["response"][0]["bookmakers"] -> list of bookmakers
+        bets = resp.get("response", [])
         if not bets:
             return None
 
-        markets = bets[0].get("bets", [])
+        bookmakers = bets[0].get("bookmakers", []) if isinstance(bets[0], dict) else []
+        if not bookmakers:
+            return None
+
+        markets = bookmakers[0].get("bets", []) if isinstance(bookmakers[0], dict) else []
         for m in markets:
-            if m.get("name") == "Match Winner":
-                odds = m.get("values", [])
-                home = float(odds[0]["odd"])
-                draw = float(odds[1]["odd"])
-                away = float(odds[2]["odd"])
+            name = m.get("name", "") if isinstance(m, dict) else ""
+            # try to catch typical "Match Winner" market names (english/pt)
+            if name in ("Match Winner", "Vencedor da Partida", "1X2", "Winner"):
+                values = m.get("values", []) or []
+                # safe extraction of odds (some entries may be missing)
+                try:
+                    home = float(values[0].get("odd")) if len(values) > 0 and values[0].get("odd") is not None else None
+                    draw = float(values[1].get("odd")) if len(values) > 1 and values[1].get("odd") is not None else None
+                    away = float(values[2].get("odd")) if len(values) > 2 and values[2].get("odd") is not None else None
+                except Exception:
+                    home = draw = away = None
+
                 return home, draw, away
 
     except Exception:
@@ -130,27 +142,77 @@ def fetch_odds_for_match(match_id):
     return None
 
 
-# --- Convert odds to probabilities ---
 def odds_to_probs_decimal(home, draw, away):
     try:
-        inv = np.array([1/home, 1/draw, 1/away])
+        inv = np.array([1.0 / home, 1.0 / draw, 1.0 / away])
         inv_sum = inv.sum()
         probs = inv / inv_sum
         return float(probs[0]), float(probs[1]), float(probs[2])
     except Exception:
+        # fallback probabilities (evenly distributed)
         return 0.33, 0.34, 0.33
 
 
-# --- Compute home/away strengths ---
 def model_probs_from_form(home_matches, away_matches):
+    # compute points-per-match metric from a list of matches
     def ppm(matches):
         pts = 0
         games = 0
         for m in matches:
-            score = m.get("score", {}) or m.get("goals", {})
+            score = m.get("score", {}) or m.get("goals", {}) or {}
             try:
+                # try to read fulltime dict first
                 if isinstance(score.get("fulltime", {}), dict):
-                    h = score["fulltime"].get("home")
+                    h = score.get("fulltime", {}).get("home")
+                    a = score.get("fulltime", {}).get("away")
+                else:
+                    h = score.get("home")
+                    a = score.get("away")
+            except Exception:
+                h = None
+                a = None
+
+            if h is None or a is None:
+                continue
+
+            games += 1
+            if h > a:
+                pts += 3
+            elif h == a:
+                pts += 1
+
+        return (pts / games) if games else 1.0
+
+    ppm_h = ppm(home_matches)
+    ppm_a = ppm(away_matches)
+
+    total = ppm_h + ppm_a if (ppm_h + ppm_a) != 0 else 1.0
+    ph = ppm_h / total
+    pa = ppm_a / total
+    pd = max(0.15, 1 - (ph + pa))
+
+    return round(ph, 2), round(pd, 2), round(pa, 2)
+
+            if h is None or a is None:
+                continue
+
+            games += 1
+            if h > a:
+                pts += 3
+            elif h == a:
+                pts += 1
+
+        return pts / games if games else 1.0
+
+    ppm_h = ppm(home_matches)
+    ppm_a = ppm(away_matches)
+
+    total = ppm_h + ppm_a
+    ph = ppm_h / total
+    pa = ppm_a / total
+    pd = max(0.15, 1 - (ph + pa))
+
+    return round(ph, 2), round(pd, 2), round(pa, 2)
                     a = score["fulltime"].get("away")
                 else:
                     h = score.get("home")
@@ -159,36 +221,15 @@ def model_probs_from_form(home_matches, away_matches):
                 continue
 
             if h is None or a is None:
-                continue
+        continue
 
-            games += 1
-            if h > a:
-                pts += 3
-            elif h == a:
-                pts += 1
+    games += 1
+    if h > a:
+        pts += 3
+    elif h == a:
+        pts += 1
 
-        return pts / games if games else 1.0
-
-    ppm_h = ppm(home_matches)
-    ppm_a = ppm(away_matches)
-
-    total = ppm_h + ppm_a
-    ph = ppm_h / total
-    pa = ppm_a / total
-    pd = max(0.15, 1 - (ph + pa))
-
-    return round(ph, 2), round(pd, 2), round(pa, 2)
-
-            if h is None or a is None:
-                continue
-
-            games += 1
-            if h > a:
-                pts += 3
-            elif h == a:
-                pts += 1
-
-        return pts / games if games else 1.0
+    return pts / games if games else 1.0
 
     ppm_h = ppm(home_matches)
     ppm_a = ppm(away_matches)
@@ -199,149 +240,164 @@ def model_probs_from_form(home_matches, away_matches):
     pd = max(0.15, 1 - (ph + pa))
 
     return round(ph, 2), round(pd, 2), round(pa, 2)
-                    a = score["fulltime"].get("away")
-                else:
-                    h = score.get("home")
-                    a = score.get("away")
-            except:
-                continue
 
-            if h is None or a is None:
-                continue
+    try:
+        h = score["fulltime"].get("away")
+        a = score["fulltime"].get("home")
+    except:
+        h = score.get("home")
+        a = score.get("away")
 
-            games += 1
-            if h > a:
-                pts += 3
-            elif h == a:
-                pts += 1
+    if h is None or a is None:
+        continue
 
-        return pts / games if games else 1.0
+    games += 1
+    if h > a:
+        pts += 3
+    elif h == a:
+        pts += 1
 
-    ppm_h = ppm(home_matches)
-    ppm_a = ppm(away_matches)
+    return pts / games if games else 1.0
 
-    total = ppm_h + ppm_a
-    ph = ppm_h / total
-    pa = ppm_a / total
-    pd = max(0.15, 1 - (ph + pa))
 
-    return round(ph, 2), round(pd, 2), round(pa, 2)
-        if "__error__" in resp:
-            st.warning(f"Erro ao buscar fixtures {league_name}: {resp['__error__']}")
-            continue
-        fixtures = resp.get("matches") or resp.get("response") or []
-        for f in fixtures:
-            fix = f.get("fixture") or f
-            match_id = fix.get("id") or f.get("id") or (f.get("fixture") or {}).get("id") if isinstance(f, dict) else None
-            utc = fix.get("utcDate") or fix.get("date") or f.get("utcDate") or ""
-            hour = utc[11:16] if utc else ""
-            # teams parsing defensive
-            teams = f.get("teams") or f.get("homeTeam") or {}
-            home = teams.get("home", {}).get("name") if isinstance(teams, dict) and teams.get("home") else (f.get("homeTeam") or {}).get("name") if f.get("homeTeam") else ""
-            away = teams.get("away", {}).get("name") if isinstance(teams, dict) and teams.get("away") else (f.get("awayTeam") or {}).get("name") if f.get("awayTeam") else ""
-            home_id = (teams.get("home", {}).get("id") if isinstance(teams, dict) and teams.get("home") else (f.get("homeTeam") or {}).get("id")) if isinstance(f, dict) else None
-            away_id = (teams.get("away", {}).get("id") if isinstance(teams, dict) and teams.get("away") else (f.get("awayTeam") or {}).get("id")) if isinstance(f, dict) else None
-            results.append({"MatchID": int(match_id) if match_id else None, "League": league_name, "Date": date_iso, "Hour": hour, "Home": home, "Away": away, "HomeID": home_id, "AwayID": away_id})
-    return pd.DataFrame(results)
+# --- Fetch fixtures ---
+    fixtures = resp.get("matches") or resp.get("response") or []
+
+    for f in fixtures:
+        fix = f.get("fixture") or f.get("id") or f.get("fixture") or f.get("id") if isinstance(f, dict) else None
+        if not fix or fix.get("utcDate") or fix.get("utcDate") or fix.get("utcDate") == "":
+            home = f.get("teams", {}).get("homeTeam") or {}
+            away = f.get("teams", {}).get("awayTeam") or {}
+
+        home_name = teams.get("home", {}).get("name") if isinstance(teams, dict) and teams.get("home") else f.get("homeTeam", {}).get("name")
+        away_name = teams.get("away", {}).get("name") if isinstance(teams, dict) and teams.get("away") else f.get("awayTeam", {}).get("name")
+
+        home_id = teams.get("home", {}).get("id") if isinstance(teams, dict) and teams.get("home") else f.get("homeTeam", {}).get("id")
+        away_id = teams.get("away", {}).get("id") if isinstance(teams, dict) and teams.get("away") else f.get("awayTeam", {}).get("id")
+
+        out.append({
+            "MatchID": int(match_id) if match_id else None,
+            "League": league_name,
+            "Date": date_iso,
+            "Hour": hour_iso,
+            "Home": home_name,
+            "Away": away_name,
+            "HomeID": home_id,
+            "AwayID": away_id
+        })
+
+    return pd.DataFrame(out)
+
 
 # --- UI Inputs ---
 st.sidebar.header("Configuração")
-data_sel = st.sidebar.date_input("Data das partidas", value=date.today())
+data_sel = st.sidebar.date_input("Data das partidas", value=datetime.today())
+
 leagues_sel = st.sidebar.multiselect("Ligas", options=list(LEAGUES.keys()), default=["Brasileirão Série A"])
+
 mode = st.sidebar.radio("Modo de análise", ["Odds quando disponível", "Modelo (sem odds)"])
-include_h2h = st.sidebar.checkbox("Incluir H2H nos ajustes", value=True)
-last_n = st.sidebar.number_input("Últimos N jogos (por time)", min_value=1, max_value=10, value=5)
+incl_h2h = st.sidebar.checkbox("Incluir H2H nos ajustes", value=True)
+last_n = st.sidebar.number_input("Últimos N jogos (por time)", min_value=1, max_value=12, value=5)
+
 btn_fetch = st.sidebar.button("Buscar partidas")
 
 if "matches_df" not in st.session_state:
     st.session_state["matches_df"] = pd.DataFrame()
 
 if btn_fetch:
-    with st.spinner("Buscando partidas..."):
-        df_matches = get_matches_dataframe(leagues_sel, data_sel)
-        if df_matches.empty:
-            st.warning("Nenhuma partida encontrada para a data/ligas selecionadas.")
-            st.session_state["matches_df"] = pd.DataFrame()
-        else:
-            df_matches["home_odd"] = np.nan; df_matches["draw_odd"] = np.nan; df_matches["away_odd"] = np.nan
-            # fetch odds when available and mode requires
-            for i, row in df_matches.iterrows():
-                mid = row.get("MatchID")
-                if mode == "Odds quando disponível" and mid and API_FOOTBALL_KEY:
-                    odds = fetch_odds_for_match(int(mid))
-                    if odds:
-                        # provider parsing varies; keep raw
-                        df_matches.at[i, "home_odd"] = np.nan
-                        df_matches.at[i, "draw_odd"] = np.nan
-                        df_matches.at[i, "away_odd"] = np.nan
-            # compute base probs (model/fallback)
-            if mode == "Odds quando disponível" and df_matches[ ["home_odd","draw_odd","away_odd"] ].notna().any(axis=None):
-                probs = []
-                for _, r in df_matches.iterrows():
-                    h,d,a = r.get("home_odd"), r.get("draw_odd"), r.get("away_odd")
-                    if pd.notna(h) and pd.notna(d) and pd.notna(a) and h>0 and d>0 and a>0:
-                        probs.append(odds_to_probs_decimal(h,d,a))
-                    else:
-                        probs.append(model_probs_from_form([], []))
-                df_matches["Prob_H"], df_matches["Prob_D"], df_matches["Prob_A"] = zip(*probs)
-            else:
-                gens = [model_probs_from_form([], []) for _ in range(len(df_matches))]
-                df_matches["Prob_H"], df_matches["Prob_D"], df_matches["Prob_A"] = zip(*gens)
-            # combine with H2H/form
-            df_matches = combine_probabilities(df_matches, use_h2h=include_h2h, last_n=int(last_n))
-            st.session_state["matches_df"] = df_matches
-            st.success("Partidas carregadas e probabilidades calculadas.")
+    st.spinner("Buscando partidas...")
 
-# Display main table
+    df_matches = get_matches_dataframe(leagues_sel, data_sel)
+
+    if df_matches.empty:
+        st.warning("Nenhuma partida encontrada para a data/ligas selecionadas.")
+        st.session_state["matches_df"] = pd.DataFrame()
+    else:
+        st.session_state["matches_df"] = df_matches
+        st.success("Partidas carregadas e probabilidades calculadas.")
+            # --- Display main table ---
 df_show = st.session_state.get("matches_df", pd.DataFrame())
+
 if not df_show.empty:
-    display_df = df_show[["MatchID","League","Date","Hour","Home","Away","home_odd","draw_odd","away_odd","Prob_H","Prob_D","Prob_A","Prob_Final_H","Prob_Final_D","Prob_Final_A"]].rename(columns={"home_odd":"Odd_H","draw_odd":"Odd_D","away_odd":"Odd_A","Prob_H":"Base_H","Prob_D":"Base_D","Prob_A":"Base_A","Prob_Final_H":"Final_H","Prob_Final_D":"Final_D","Prob_Final_A":"Final_A"})
-    st.dataframe(display_df, use_container_width=True)
-    st.subheader("📊 Últimos 5 jogos e H2H (detalhado por partida)")
+    st.dataframe(
+        df_show[["MatchID", "League", "Date", "Hour", "Home", "Away", "home_odd", "draw_odd", "away_odd", "Prob_H", "Prob_D", "Prob_A"]],
+        use_container_width=True
+    )
+
+    st.subheader("Últimos 5 jogos e H2H detalhado (por partida)")
+
     for _, row in df_show.iterrows():
-        home = row.get("Home"); away = row.get("Away"); hid = row.get("HomeID"); aid = row.get("AwayID")
-        st.markdown(f"### ⚔️ {home} x {away}")
-        with st.expander(f"Últimos {last_n} jogos - {home}"):
-            if hid and API_FOOTBALL_KEY:
-                last_home = fetch_last_matches(hid, n=last_n)
+        mid = row.get("MatchID")
+        home_name = row.get("Home")
+        away_name = row.get("Away")
+        home_id = row.get("HomeID")
+        away_id = row.get("AwayID")
+
+        st.markdown(f"### {home_name} vs {away_name}")
+
+        with st.expander(f"Últimos {last_n} jogos - {home_name} (casa)"):
+            if API_FOOTBALL_KEY:
+                last_home = fetch_last_matches(home_id, n=last_n)
                 if last_home:
                     out = []
-                    for g in last_home[:last_n]:
-                        fix = g.get("fixture") or {}
-                        date_s = fix.get("date") or fix.get("utcDate") or None
-                        teams = g.get("teams") or {}
-                        home_name = teams.get("home", {}).get("name") if teams else None
-                        away_name = teams.get("away", {}).get("name") if teams else None
-                        score = g.get("score") or {}
-                        ft = score.get("fulltime", {}) if isinstance(score.get("fulltime", {}), dict) else {}
-                        out.append({"Date": date_s, "Opponent": away_name if home_name==home else home_name, "Score": f"{ft.get('home','-')} - {ft.get('away','-')}"})
+                    for m in last_home[:last_n]:
+                        fix = m.get("fixture", {})
+                        teams = m.get("teams", {})
+                        home_n = teams.get("home", {}).get("name") if teams else None
+                        away_n = teams.get("away", {}).get("name") if teams else None
+                        score = m.get("score") or {}
+
+                        h = score.get("fulltime", {}).get("home") if isinstance(score.get("fulltime", {}), dict) else score.get("home")
+                        a = score.get("fulltime", {}).get("away") if isinstance(score.get("fulltime", {}), dict) else score.get("away")
+
+                        out.append({
+                            "Date": fix.get("date"),
+                            "Opponent": away_n if home_n == home_name else home_n,
+                            "Score": f"{h} - {a}"
+                        })
+
                     st.dataframe(pd.DataFrame(out))
                 else:
                     st.info("Últimos jogos não disponíveis via API para este time.")
             else:
                 st.info("ID do time ou API não disponível para buscar últimos jogos.")
-        with st.expander(f"Últimos {last_n} jogos - {away}"):
-            if aid and API_FOOTBALL_KEY:
-                last_away = fetch_last_matches(aid, n=last_n)
+
+        with st.expander(f"Últimos {last_n} jogos - {away_name} (fora)"):
+            if away_id and API_FOOTBALL_KEY:
+                last_away = fetch_last_matches(away_id, n=last_n)
                 if last_away:
                     out = []
-                    for g in last_away[:last_n]:
-                        fix = g.get("fixture") or {}
-                        date_s = fix.get("date") or fix.get("utcDate") or None
-                        teams = g.get("teams") or {}
-                        home_name = teams.get("home", {}).get("name") if teams else None
-                        away_name = teams.get("away", {}).get("name") if teams else None
-                        score = g.get("score") or {}
-                        ft = score.get("fulltime", {}) if isinstance(score.get("fulltime", {}), dict) else {}
-                        out.append({"Date": date_s, "Opponent": home_name if away_name==away else away_name, "Score": f"{ft.get('home','-')} - {ft.get('away','-')}"})
+                    for m in last_away[:last_n]:
+                        fix = m.get("fixture", {})
+                        teams = m.get("teams", {})
+                        home_n = teams.get("home", {}).get("name") if teams else None
+                        away_n = teams.get("away", {}).get("name") if teams else None
+                        score = m.get("score") or {}
+
+                        h = score.get("fulltime", {}).get("home") if isinstance(score.get("fulltime", {}), dict) else score.get("home")
+                        a = score.get("fulltime", {}).get("away") if isinstance(score.get("fulltime", {}), dict) else score.get("away")
+
+                        out.append({
+                            "Date": fix.get("date"),
+                            "Opponent": home_n if home_n != away_name else away_n,
+                            "Score": f"{h} - {a}"
+                        })
+
                     st.dataframe(pd.DataFrame(out))
                 else:
                     st.info("Últimos jogos não disponíveis via API para este time.")
             else:
                 st.info("ID do time ou API não disponível para buscar últimos jogos.")
+
         with st.expander("Confrontos Diretos (H2H)"):
-            if hid and aid and API_FOOTBALL_KEY:
-                h2h = fetch_h2h(hid, aid, n=last_n)
+            if mid and API_FOOTBALL_KEY:
+                h2h = fetch_h2h(mid)
+                if h2h:
+                    st.dataframe(h2h)
+                else:
+                    st.info("Nenhum confronto direto encontrado.")
+            else:
+                st.info("API ou MatchID não disponível para buscar H2H.")
                 if h2h:
                     out = []
                     for g in h2h[:last_n]:
