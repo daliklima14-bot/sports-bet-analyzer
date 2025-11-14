@@ -115,20 +115,15 @@ def fetch_odds_for_match(match_id):
         if not bets:
             return None
 
-        markets = bets[0].get("bets", [])
-        for m in markets:
-            if m.get("name") == "Match Winner":
-                odds = m.get("values", [])
-                home = float(odds[0]["odd"])
-                draw = float(odds[1]["odd"])
-                away = float(odds[2]["odd"])
-                return home, draw, away
-
-    except Exception:
-        return None
-
-    return None
-
+try:
+            h = None; a = None
+            if isinstance(score.get("fulltime", {}), dict):
+                h = score.get("fulltime", {}).get("home")
+                a = score.get("fulltime", {}).get("away")
+            else:
+                h = score.get("home"); a = score.get("away")
+        except Exception:
+            h = a = None
 
 # --- Convert odds to probabilities ---
 def odds_to_probs_decimal(home, draw, away):
