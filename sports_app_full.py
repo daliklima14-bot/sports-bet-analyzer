@@ -27,10 +27,9 @@ FOOTBALL_DATA_KEY = st.secrets.get("FOOTBALL_DATA_API", "")
 API_FOOTBALL_BASE = "https://v3.football.api-sports.io"
 FOOTBALL_DATA_BASE = "https://api.football-data.org/v4"
 
-HEADERS_API_FOOTBALL = {"x-apisports-key": API_FOOTBALL_KEY} if API_FOOTBALL_KEY else {}
-HEADERS_FOOTBALL_DATA = {"X-Auth-Token": FOOTBALL_DATA_KEY} if FOOTBALL_DATA_KEY else {}
-
-if not API_FOOTBALL_KEY and not FOOTBALL_DATA_KEY:
+# Cabeçalhos: só monta dict se houver a chave (evita enviar headers vazios)
+HEADERS_API_FOOTBALL = {"x-apisports-key": API_FOOTBALL_KEY} if API_FOOTBALL_KEY else None
+HEADERS_FOOTBALL_DATA = {"X-Auth-Token": FOOTBALL_DATA_KEY} if FOOTBALL_DATA_KEY else None
     st.warning("Nenhuma API configurada. O app funcionará em modo simulado (mock).")
 
 
