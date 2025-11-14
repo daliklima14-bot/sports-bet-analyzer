@@ -107,7 +107,7 @@ def fetch_odds_for_match(match_id):
     params = {"fixture": match_id, "bookmaker": 1}  # Bet365
     resp = safe_get(url, params=params, headers=HEADERS_API_FOOTBALL)
 
-    if "_error_" in resp:
+    if "error" in resp:
         return None
 
     try:
@@ -115,15 +115,21 @@ def fetch_odds_for_match(match_id):
         if not bets:
             return None
 
-    try:
-            h = None; a = None
-            if isinstance(score.get("fulltime", {}), dict):
-                h = score.get("fulltime", {}).get("home")
-                a = score.get("fulltime", {}).get("away")
-            else:
-                h = score.get("home"); a = score.get("away")
-        except Exception:
-            h = a = None
+        markets = bets[0].get("bets", [])
+        for m in markets:
+            if m.get("name") == "Match Winner":
+                odds = m.get("values", [])
+                home = float(odds[0]["odd"])
+                draw = float(odds[1]["odd"])
+                away = float(odds[2]["odd"])
+                return home, draw, away
+
+    except Exception:
+        return None
+
+    return None
+
+
 # --- Convert odds to probabilities ---
 def odds_to_probs_decimal(home, draw, away):
     try:
@@ -151,6 +157,27 @@ def model_probs_from_form(home_matches, away_matches):
                     a = score.get("away")
             except:
                 continue
+
+            if h is None or a is None:
+                continue
+
+            games += 1
+            if h > a:
+                pts += 3
+            elif h == a:
+                pts += 1
+
+        return pts / games if games else 1.0
+
+    ppm_h = ppm(home_matches)
+    ppm_a = ppm(away_matches)
+
+    total = ppm_h + ppm_a
+    ph = ppm_h / total
+    pa = ppm_a / total
+    pd = max(0.15, 1 - (ph + pa))
+
+    return round(ph, 2), round(pd, 2), round(pa, 2)
 
             if h is None or a is None:
                 continue
