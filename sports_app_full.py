@@ -98,59 +98,86 @@ def fetch_h2h(home_id, away_id, n=5):
     resp = safe_get(url, params=params, headers=HEADERS_API_FOOTBALL)
     return resp.get("response", []) if "__error__" not in resp else []
 
+# --- Fetch odds for a match ---
 def fetch_odds_for_match(match_id):
     if not API_FOOTBALL_KEY:
         return None
-    url = f"{API_FOOTBALL_BASE}/odds"
-    params = {"fixture": match_id}
-    resp = safe_get(url, params=params, headers=HEADERS_API_FOOTBALL)
-    if "__error__" in resp:
-        return None
-    return resp.get("response", [])
 
+    url = f"{API_FOOTBALL_BASE}/odds"
+    params = {"fixture": match_id, "bookmaker": 1}  # Bet365
+    resp = safe_get(url, params=params, headers=HEADERS_API_FOOTBALL)
+
+    if "error" in resp:
+        return None
+
+    try:
+        bets = resp.get("response", [])[0].get("bookmakers", [])
+        if not bets:
+            return None
+
+        markets = bets[0].get("bets", [])
+        for m in markets:
+            if m.get("name") == "Match Winner":
+                odds = m.get("values", [])
+                home = float(odds[0]["odd"])
+                draw = float(odds[1]["odd"])
+                away = float(odds[2]["odd"])
+                return home, draw, away
+
+    except Exception:
+        return None
+
+    return None
+
+
+# --- Convert odds to probabilities ---
 def odds_to_probs_decimal(home, draw, away):
     try:
-        inv = np.array([1.0/home, 1.0/draw, 1.0/away])
-        probs = inv / inv.sum()
+        inv = np.array([1/home, 1/draw, 1/away])
+        inv_sum = inv.sum()
+        probs = inv / inv_sum
         return float(probs[0]), float(probs[1]), float(probs[2])
     except Exception:
         return 0.33, 0.34, 0.33
 
+
+# --- Compute home/away strengths ---
 def model_probs_from_form(home_matches, away_matches):
     def ppm(matches):
-        pts = 0; games = 0
+        pts = 0
+        games = 0
         for m in matches:
-            score = m.get("score", {}) or m.get("goals", {}) or {}
-            # defensive extraction
+            score = m.get("score", {}) or m.get("goals", {})
             try:
-                h = None; a = None
                 if isinstance(score.get("fulltime", {}), dict):
-                    h = score.get("fulltime", {}).get("home"); a = score.get("fulltime", {}).get("away")
+                    h = score["fulltime"].get("home")
+                    a = score["fulltime"].get("away")
                 else:
-                    h = score.get("home"); a = score.get("away")
-            except Exception:
-                h = a = None
-            if h is None or a is None: continue
-            games += 1
-            if h > a: pts += 3
-            elif h == a: pts += 1
-        return (pts/games) if games else 1.0
-    ppm_h = ppm(home_matches); ppm_a = ppm(away_matches)
-    total = max(0.0001, ppm_h + ppm_a)
-    ph = ppm_h/total; pa = ppm_a/total
-    pd = max(0.05, 1 - (ph + pa))
-    s = ph + pd + pa
-    return round(ph/s,2), round(pd/s,2), round(pa/s,2)
+                    h = score.get("home")
+                    a = score.get("away")
+            except:
+                continue
 
-# --- Build dataframe of matches ---
-def get_matches_dataframe(selected_leagues, date_obj):
-    results = []
-    date_iso = date_obj.isoformat()
-    for league_name in selected_leagues:
-        league_id = LEAGUES.get(league_name)
-        if not league_id:
-            continue
-        resp = fetch_fixtures_by_league_and_date(league_id, date_iso)
+            if h is None or a is None:
+                continue
+
+            games += 1
+            if h > a:
+                pts += 3
+            elif h == a:
+                pts += 1
+
+        return pts / games if games else 1.0
+
+    ppm_h = ppm(home_matches)
+    ppm_a = ppm(away_matches)
+
+    total = ppm_h + ppm_a
+    ph = ppm_h / total
+    pa = ppm_a / total
+    pd = max(0.15, 1 - (ph + pa))
+
+    return round(ph, 2), round(pd, 2), round(pa, 2)
         if "__error__" in resp:
             st.warning(f"Erro ao buscar fixtures {league_name}: {resp['__error__']}")
             continue
