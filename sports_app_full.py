@@ -115,7 +115,7 @@ def fetch_odds_for_match(match_id):
         if not bets:
             return None
 
-try:
+    try:
             h = None; a = None
             if isinstance(score.get("fulltime", {}), dict):
                 h = score.get("fulltime", {}).get("home")
@@ -124,7 +124,6 @@ try:
                 h = score.get("home"); a = score.get("away")
         except Exception:
             h = a = None
-
 # --- Convert odds to probabilities ---
 def odds_to_probs_decimal(home, draw, away):
     try:
