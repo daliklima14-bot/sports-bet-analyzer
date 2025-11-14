@@ -181,7 +181,50 @@ def model_probs_from_form(home_matches, away_matches):
             elif h == a:
                 pts += 1
 
-        return (pts / games) if games else 1.0
+def model_probs_from_form(home_matches, away_matches):
+
+    def ppm(matches):
+        pts = 0
+        games = 0
+
+        for m in matches:
+            score = m.get("score") or m.get("goals") or {}
+
+            try:
+                # tenta forma nova
+                if isinstance(score.get("fulltime"), dict):
+                    h = score["fulltime"].get("home")
+                    a = score["fulltime"].get("away")
+                else:
+                    # forma antiga
+                    h = score.get("home")
+                    a = score.get("away")
+            except:
+                h = None
+                a = None
+
+            if h is None or a is None:
+                continue
+
+            games += 1
+            if h > a:
+                pts += 3
+            elif h == a:
+                pts += 1
+
+        return pts / games if games else 1.0
+
+    # calcula ppm
+    ppm_h = ppm(home_matches)
+    ppm_a = ppm(away_matches)
+
+    total = ppm_h + ppm_a if (ppm_h + ppm_a) != 0 else 1.0
+
+    ph = ppm_h / total
+    pa = ppm_a / total
+    pd = max(0.15, 1 - (ph + pa))
+
+    return round(ph, 2), round(pd, 2), round(pa, 2)        return (pts / games) if games else 1.0
 
     ppm_h = ppm(home_matches)
     ppm_a = ppm(away_matches)
@@ -207,57 +250,6 @@ def model_probs_from_form(home_matches, away_matches):
     ppm_h = ppm(home_matches)
     ppm_a = ppm(away_matches)
 
-    total = ppm_h + ppm_a
-    ph = ppm_h / total
-    pa = ppm_a / total
-    pd = max(0.15, 1 - (ph + pa))
-
-    return round(ph, 2), round(pd, 2), round(pa, 2)
-                    a = score["fulltime"].get("away")
-                else:
-                    h = score.get("home")
-                    a = score.get("away")
-            except:
-                continue
-
-            if h is None or a is None:
-        continue
-
-    games += 1
-    if h > a:
-        pts += 3
-    elif h == a:
-        pts += 1
-
-    return pts / games if games else 1.0
-
-    ppm_h = ppm(home_matches)
-    ppm_a = ppm(away_matches)
-
-    total = ppm_h + ppm_a
-    ph = ppm_h / total
-    pa = ppm_a / total
-    pd = max(0.15, 1 - (ph + pa))
-
-    return round(ph, 2), round(pd, 2), round(pa, 2)
-
-    try:
-        h = score["fulltime"].get("away")
-        a = score["fulltime"].get("home")
-    except:
-        h = score.get("home")
-        a = score.get("away")
-
-    if h is None or a is None:
-        continue
-
-    games += 1
-    if h > a:
-        pts += 3
-    elif h == a:
-        pts += 1
-
-    return pts / games if games else 1.0
 
 
 # --- Fetch fixtures ---
