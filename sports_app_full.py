@@ -45,13 +45,22 @@ LEAGUES = {
 }
 
 # --- Helpers ---
+# --- Helpers ---
 def safe_get(url, params=None, headers=None, timeout=12):
     try:
         r = requests.get(url, params=params, headers=headers or {}, timeout=timeout)
         time.sleep(0.12)
+
         if r.status_code == 200:
             return r.json()
-        return {"__error__": f"{r.status_code} - {r.text}"}
+
+        return {
+            "__error__": f"CODE {r.status_code}",
+            "url": url,
+            "params": params,
+            "response_text": r.text
+        }
+
     except Exception as e:
         return {"__error__": str(e)}
 
