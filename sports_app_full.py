@@ -24,14 +24,20 @@ st.write("App que busca partidas, mostra últimos jogos/H2H e simula retornos.")
 API_FOOTBALL_KEY = st.secrets.get("api-football", "")
 FOOTBALL_DATA_KEY = st.secrets.get("FOOTBALL_DATA_API", "")
 
-API_FOOTBALL_BASE = "https://v3.football.api-sports.io"
-FOOTBALL_DATA_BASE = "https://api.football-data.org/v4"
+# 🗝️ --- KEYS (via Streamlit Secrets) ---
+API_FOOTBALL_KEY = st.secrets.get("api-football", "")
+FOOTBALL_DATA_KEY = st.secrets.get("football_data_api", "")
 
-# Cabeçalhos: só monta dict se houver a chave (evita enviar headers vazios)
-HEADERS_API_FOOTBALL = {"x-apisports-key": API_FOOTBALL_KEY} if API_FOOTBALL_KEY else None
-HEADERS_FOOTBALL_DATA = {"X-Auth-Token": FOOTBALL_DATA_KEY} if FOOTBALL_DATA_KEY else None
+API_FOOTBALL_BASE = "https://v3.football.api-sports.io/"
+FOOTBALL_DATA_BASE = "https://api.football-data.org/v4/"
+
+# Headers corretos
+HEADERS_API_FOOTBALL = {"X-APi-Key": API_FOOTBALL_KEY}
+HEADERS_FOOTBALL_DATA = {"X-Auth-Token": FOOTBALL_DATA_KEY}
+
+# Aviso caso nenhuma API tenha sido configurada
+if not API_FOOTBALL_KEY and not FOOTBALL_DATA_KEY:
     st.warning("Nenhuma API configurada. O app funcionará em modo simulado (mock).")
-
 
 # --- Default leagues (IDs for api-football / codes for football-data) ---
 LEAGUES = {
